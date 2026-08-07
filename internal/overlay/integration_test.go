@@ -88,6 +88,8 @@ func startTestNode(t *testing.T, ctx context.Context, cfg config.Config) *Node {
 	t.Helper()
 	cfg.Listen = []string{"127.0.0.1:0"}
 	cfg.Dashboard = ""
+	cfg.Proxy.SOCKS = ""
+	cfg.Proxy.HTTP = ""
 	if cfg.Routing.LSAInterval == "20s" {
 		cfg.Routing = config.Routing{LSAInterval: "200ms", LSATTL: "3s", MaxHops: 16}
 	}

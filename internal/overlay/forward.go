@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/localzet/knotroute/internal/naming"
 	"github.com/localzet/knotroute/internal/nodeid"
 )
 
@@ -24,7 +25,7 @@ func (n *Node) startForwards() {
 		state.Listen = listener.Addr().String()
 		n.forwardState[i] = state
 		n.forwardListeners = append(n.forwardListeners, listener)
-		destination, _ := nodeid.Parse(f.Node)
+		destination, _ := naming.ResolveNodeReference(f.Node, n.cfg.Aliases)
 		n.wg.Add(1)
 		go n.forwardLoop(listener, destination, f.Service)
 	}

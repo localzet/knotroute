@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,11 +11,13 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/localzet/knotroute/internal/config"
 	"github.com/localzet/knotroute/internal/identity"
+	"github.com/localzet/knotroute/internal/naming"
 	"github.com/localzet/knotroute/internal/overlay"
 )
 
@@ -31,6 +34,12 @@ func main() {
 		err = runCommand(os.Args[2:])
 	case "id":
 		err = idCommand(os.Args[2:])
+	case "address":
+		err = addressCommand(os.Args[2:])
+	case "resolve":
+		err = resolveCommand(os.Args[2:])
+	case "alias":
+		err = aliasCommand(os.Args[2:])
 	case "doctor":
 		err = doctorCommand(os.Args[2:])
 	case "version", "--version", "-v":
@@ -54,6 +63,10 @@ Usage:
   knotroute init   [--config knotroute.json] [--force]
   knotroute run    [--config knotroute.json]
   knotroute id     [--config knotroute.json]
+  knotroute address [--config knotroute.json] [--service name]
+  knotroute resolve [--config knotroute.json] <name.knot>
+  knotroute alias export --config knotroute.json --name localzet [--out localzet.knot-alias.json]
+  knotroute alias import --config knotroute.json --file localzet.knot-alias.json
   knotroute doctor [--config knotroute.json] [--probe]
   knotroute version
 
@@ -112,32 +125,49 @@ func runCommand(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	cfg, id, err := loadNodeFiles(*path)
-	if err != nil {
-		return err
-	}
-	node, err := overlay.New(cfg, id)
-	if err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := node.Start(ctx); err != nil {
-		return err
+	for {
+		cfg, id, err := loadNodeFiles(*path)
+		if err != nil {
+			return err
+		}
+		node, err := overlay.New(cfg, id)
+		if err != nil {
+			return err
+		}
+		if err := node.Start(ctx); err != nil {
+			return err
+		}
+		fmt.Println("KnotRoute", overlay.Version)
+		fmt.Println("Node:", id.ID.String())
+		fmt.Println("Address:", node.Domain())
+		fmt.Println("Overlay listeners:")
+		for _, address := range node.Addresses() {
+			fmt.Println("  ", address)
+		}
+		if cfg.Proxy.SOCKS != "" {
+			fmt.Println("SOCKS5: socks5://" + cfg.Proxy.SOCKS)
+		}
+		if cfg.Proxy.HTTP != "" {
+			fmt.Println("HTTP proxy: http://" + cfg.Proxy.HTTP)
+		}
+		if cfg.Dashboard != "" {
+			fmt.Println("Dashboard: http://" + cfg.Dashboard)
+		}
+		fmt.Println("Press Ctrl+C to stop.")
+		select {
+		case <-ctx.Done():
+			node.Stop()
+			return nil
+		case <-node.ShutdownRequested():
+			node.Stop()
+			return nil
+		case <-node.RestartRequested():
+			node.Stop()
+			fmt.Println("Reloading configuration...")
+		}
 	}
-	fmt.Println("KnotRoute", overlay.Version)
-	fmt.Println("Node:", id.ID.String())
-	fmt.Println("Overlay listeners:")
-	for _, address := range node.Addresses() {
-		fmt.Println("  ", address)
-	}
-	if cfg.Dashboard != "" {
-		fmt.Println("Dashboard: http://" + cfg.Dashboard)
-	}
-	fmt.Println("Press Ctrl+C to stop.")
-	<-ctx.Done()
-	node.Stop()
-	return nil
 }
 
 func idCommand(args []string) error {
@@ -152,6 +182,134 @@ func idCommand(args []string) error {
 	}
 	fmt.Println(id.ID.String())
 	return nil
+}
+
+func addressCommand(args []string) error {
+	fs := flag.NewFlagSet("address", flag.ContinueOnError)
+	path := fs.String("config", "knotroute.json", "configuration file")
+	service := fs.String("service", "", "optional published service")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	_, id, err := loadNodeFiles(*path)
+	if err != nil {
+		return err
+	}
+	if *service == "" {
+		fmt.Println(naming.CanonicalDomain(id.ID))
+		return nil
+	}
+	domain, err := naming.ServiceDomain(*service, id.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println(domain)
+	return nil
+}
+
+func resolveCommand(args []string) error {
+	fs := flag.NewFlagSet("resolve", flag.ContinueOnError)
+	path := fs.String("config", "knotroute.json", "configuration file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("resolve expects exactly one .knot name")
+	}
+	cfg, _, err := loadNodeFiles(*path)
+	if err != nil {
+		return err
+	}
+	resolved, err := naming.ResolveHost(fs.Arg(0), cfg.Aliases)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("node=%s\nservice=%s\ncanonical=%t\n", resolved.Node.String(), resolved.Service, resolved.Canonical)
+	return nil
+}
+
+func aliasCommand(args []string) error {
+	if len(args) == 0 {
+		return errors.New("alias expects export or import")
+	}
+	switch args[0] {
+	case "export":
+		fs := flag.NewFlagSet("alias export", flag.ContinueOnError)
+		path := fs.String("config", "knotroute.json", "configuration file")
+		name := fs.String("name", "", "alias name")
+		description := fs.String("description", "", "description")
+		out := fs.String("out", "", "output file; stdout when empty")
+		validity := fs.Duration("valid-for", 365*24*time.Hour, "record validity; 0 means no expiry")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("--name is required")
+		}
+		_, id, err := loadNodeFiles(*path)
+		if err != nil {
+			return err
+		}
+		record, err := naming.SignAliasRecord(id, *name, *description, time.Now(), *validity)
+		if err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			return err
+		}
+		data = append(data, '\n')
+		if *out == "" {
+			_, err = os.Stdout.Write(data)
+			return err
+		}
+		return os.WriteFile(*out, data, 0o644)
+	case "import":
+		fs := flag.NewFlagSet("alias import", flag.ContinueOnError)
+		path := fs.String("config", "knotroute.json", "configuration file")
+		file := fs.String("file", "", "signed alias record")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *file == "" {
+			return errors.New("--file is required")
+		}
+		data, err := os.ReadFile(*file)
+		if err != nil {
+			return err
+		}
+		var record naming.AliasRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			return err
+		}
+		alias, err := record.Verify(time.Now())
+		if err != nil {
+			return err
+		}
+		cfg, err := config.Load(*path)
+		if err != nil {
+			return err
+		}
+		replaced := false
+		for i := range cfg.Aliases {
+			if strings.EqualFold(cfg.Aliases[i].Name, alias.Name) {
+				cfg.Aliases[i] = alias
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			cfg.Aliases = append(cfg.Aliases, alias)
+		}
+		cfg.Path = ""
+		if err := config.SaveAtomic(*path, cfg); err != nil {
+			return err
+		}
+		fmt.Printf("Imported %s.knot -> %s\n", alias.Name, alias.Node)
+		return nil
+	default:
+		return fmt.Errorf("unknown alias command %q", args[0])
+	}
 }
 
 func doctorCommand(args []string) error {

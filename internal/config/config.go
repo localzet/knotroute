@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/localzet/knotroute/internal/nodeid"
+	"github.com/localzet/knotroute/internal/naming"
 )
 
 type Peer struct {
@@ -38,15 +38,25 @@ type Routing struct {
 	MaxHops     int    `json:"max_hops"`
 }
 
+type Proxy struct {
+	SOCKS        string `json:"socks"`
+	HTTP         string `json:"http"`
+	Direct       bool   `json:"direct"`
+	DefaultHTTP  string `json:"default_http_service"`
+	DefaultHTTPS string `json:"default_https_service"`
+}
+
 type Config struct {
-	IdentityFile string    `json:"identity_file"`
-	Listen       []string  `json:"listen"`
-	Advertise    []string  `json:"advertise,omitempty"`
-	Peers        []Peer    `json:"peers,omitempty"`
-	Services     []Service `json:"services,omitempty"`
-	Forwards     []Forward `json:"forwards,omitempty"`
-	Dashboard    string    `json:"dashboard"`
-	Routing      Routing   `json:"routing"`
+	IdentityFile string         `json:"identity_file"`
+	Listen       []string       `json:"listen"`
+	Advertise    []string       `json:"advertise,omitempty"`
+	Peers        []Peer         `json:"peers,omitempty"`
+	Services     []Service      `json:"services,omitempty"`
+	Forwards     []Forward      `json:"forwards,omitempty"`
+	Aliases      []naming.Alias `json:"aliases,omitempty"`
+	Proxy        Proxy          `json:"proxy"`
+	Dashboard    string         `json:"dashboard"`
+	Routing      Routing        `json:"routing"`
 
 	Path string `json:"-"`
 }
@@ -56,10 +66,15 @@ func Default() Config {
 		IdentityFile: "identity.json",
 		Listen:       []string{"0.0.0.0:7447"},
 		Dashboard:    "127.0.0.1:8484",
-		Routing:      Routing{LSAInterval: "20s", LSATTL: "90s", MaxHops: 16},
-		Services:     []Service{},
-		Forwards:     []Forward{},
-		Peers:        []Peer{},
+		Proxy: Proxy{
+			SOCKS: "127.0.0.1:9477", HTTP: "127.0.0.1:9478", Direct: true,
+			DefaultHTTP: "http", DefaultHTTPS: "https",
+		},
+		Routing:  Routing{LSAInterval: "20s", LSATTL: "90s", MaxHops: 16},
+		Services: []Service{},
+		Forwards: []Forward{},
+		Peers:    []Peer{},
+		Aliases:  []naming.Alias{},
 	}
 }
 
@@ -98,6 +113,40 @@ func Save(path string, cfg Config) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+func SaveAtomic(path string, cfg Config) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil && dir != "." {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".knotroute-*.json")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
 var serviceName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 func (c Config) Validate() error {
@@ -123,7 +172,7 @@ func (c Config) Validate() error {
 			errs = append(errs, err)
 		}
 		if p.ExpectedID != "" {
-			if _, err := nodeid.Parse(p.ExpectedID); err != nil {
+			if _, err := naming.ParseNodeReference(p.ExpectedID); err != nil {
 				errs = append(errs, fmt.Errorf("peers[%d].expected_id: %w", i, err))
 			}
 		}
@@ -142,7 +191,7 @@ func (c Config) Validate() error {
 		}
 		for _, allowed := range s.Allow {
 			if allowed != "*" {
-				if _, err := nodeid.Parse(allowed); err != nil {
+				if _, err := naming.ParseNodeReference(allowed); err != nil {
 					errs = append(errs, fmt.Errorf("services[%d].allow: %w", i, err))
 				}
 			}
@@ -152,12 +201,45 @@ func (c Config) Validate() error {
 		if err := validateAddress(fmt.Sprintf("forwards[%d].listen", i), f.Listen); err != nil {
 			errs = append(errs, err)
 		}
-		if _, err := nodeid.Parse(f.Node); err != nil {
+		if _, err := naming.ResolveNodeReference(f.Node, c.Aliases); err != nil {
 			errs = append(errs, fmt.Errorf("forwards[%d].node: %w", i, err))
 		}
 		if !serviceName.MatchString(f.Service) {
 			errs = append(errs, fmt.Errorf("forwards[%d].service is invalid", i))
 		}
+	}
+	seenAliases := map[string]struct{}{}
+	for i, a := range c.Aliases {
+		if err := naming.ValidateAlias(a); err != nil {
+			errs = append(errs, fmt.Errorf("aliases[%d]: %w", i, err))
+		}
+		key := strings.ToLower(strings.TrimSpace(a.Name))
+		if _, ok := seenAliases[key]; ok {
+			errs = append(errs, fmt.Errorf("duplicate alias %q", a.Name))
+		}
+		seenAliases[key] = struct{}{}
+	}
+	if c.Proxy.SOCKS != "" {
+		if err := validateAddress("proxy.socks", c.Proxy.SOCKS); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.Proxy.HTTP != "" {
+		if err := validateAddress("proxy.http", c.Proxy.HTTP); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.Proxy.DefaultHTTP == "" {
+		c.Proxy.DefaultHTTP = "http"
+	}
+	if c.Proxy.DefaultHTTPS == "" {
+		c.Proxy.DefaultHTTPS = "https"
+	}
+	if !serviceName.MatchString(c.Proxy.DefaultHTTP) {
+		errs = append(errs, errors.New("proxy.default_http_service is invalid"))
+	}
+	if !serviceName.MatchString(c.Proxy.DefaultHTTPS) {
+		errs = append(errs, errors.New("proxy.default_https_service is invalid"))
 	}
 	if c.Dashboard != "" {
 		if err := validateAddress("dashboard", c.Dashboard); err != nil {

@@ -1,41 +1,190 @@
-interface PeerStatus { id:string; short_id:string; direction:string; remote_addr:string; advertise:string[] }
-interface RouteStatus { destination:string; short_id:string; next_hop:string; hops:number; path:string[]; services:string[] }
-interface ServiceStatus { name:string; target:string; description?:string }
-interface ForwardStatus { listen:string; node:string; service:string; active:boolean; error?:string }
-interface EventItem { time:string; level:string; message:string }
-interface Status {
-  version:string; node_id:string; started_at:string; listen:string[]; peers:PeerStatus[]; routes:RouteStatus[];
-  services:ServiceStatus[]; forwards:ForwardStatus[]; active_streams:number; bytes_sent:number; bytes_received:number;
-  frames_sent:number; frames_received:number; events:EventItem[];
-}
+"use strict";
 
-const byId = <T extends HTMLElement>(id:string):T => {
-  const node=document.getElementById(id); if(!node) throw new Error(`missing element #${id}`); return node as T;
+type Peer = { address: string; expected_id?: string };
+type Service = { name: string; target: string; description?: string; allow?: string[] };
+type Forward = { listen: string; node: string; service: string };
+type Alias = { name: string; node: string; description?: string };
+type Config = {
+  identity_file: string;
+  listen: string[];
+  advertise?: string[];
+  peers?: Peer[];
+  services?: Service[];
+  forwards?: Forward[];
+  aliases?: Alias[];
+  dashboard: string;
+  proxy: { socks: string; http: string; direct: boolean; default_http_service: string; default_https_service: string };
+  routing: { lsa_interval: string; lsa_ttl: string; max_hops: number };
 };
-let last:Status|null=null;
-const short=(id?:string):string=>id&&id.length>18?`${id.slice(0,10)}…${id.slice(-4)}`:id??"—";
-const bytes=(n:number):string=>{if(!n)return"0 B";const u=["B","KiB","MiB","GiB","TiB"];const i=Math.min(Math.floor(Math.log(n)/Math.log(1024)),u.length-1);return`${(n/1024**i).toFixed(i?1:0)} ${u[i]}`};
-const duration=(seconds:number):string=>{const n=Math.max(0,Math.floor(seconds)),d=Math.floor(n/86400),h=Math.floor(n%86400/3600),m=Math.floor(n%3600/60),s=n%60;return[[d,"d"],[h,"h"],[m,"m"],[s,"s"]].filter(([v])=>Number(v)>0||s===Number(v)).map(([v,u])=>`${v}${u}`).join(" ")};
-const esc=(value:unknown):string=>String(value??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]??c));
+type Status = any;
+type Field = { key: string; label: string; value?: string; placeholder?: string; cls?: string };
 
-function renderRoutes(items:RouteStatus[]):void{
-  const root=byId("routes");if(!items.length){root.className="table-wrap empty";root.textContent="No routes yet";return}root.className="table-wrap";
-  root.innerHTML=`<table><thead><tr><th>Destination</th><th>Path</th><th>Hops</th><th>Services</th></tr></thead><tbody>${items.map(r=>`<tr><td><code title="${esc(r.destination)}">${esc(r.short_id)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length?r.services.map(x=>`<span class="service-pill">${esc(x)}</span>`).join(""):"—"}</td></tr>`).join("")}</tbody></table>`;
+const byId = <T extends HTMLElement = HTMLElement>(id: string): T => {
+  const node = document.getElementById(id);
+  if (!node) throw new Error(`missing element #${id}`);
+  return node as T;
+};
+let lastStatus: Status | null = null;
+let currentConfig: Config | null = null;
+let dirty = false;
+
+const short = (id: string | null | undefined) => id && id.length > 18 ? `${id.slice(0, 10)}…${id.slice(-4)}` : id ?? "—";
+const bytes = (n: number) => { if (!n) return "0 B"; const u = ["B", "KiB", "MiB", "GiB", "TiB"]; const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1); return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`; };
+const duration = (seconds: number) => { const n = Math.max(0, Math.floor(seconds)), d = Math.floor(n / 86400), h = Math.floor(n % 86400 / 3600), m = Math.floor(n % 3600 / 60), s = n % 60; return [[d, "d"], [h, "h"], [m, "m"], [s, "s"]].filter(([v]) => Number(v) > 0 || s === Number(v)).map(([v, u]) => `${v}${u}`).join(" "); };
+const esc = (value: unknown) => String(value ?? "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c] ?? c));
+const lines = (value: string) => value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+const csv = (value: string) => value.split(",").map(x => x.trim()).filter(Boolean);
+
+function setSaveState(message: string, state = "") {
+  const bar = document.querySelector<HTMLElement>(".savebar");
+  if (bar) bar.className = `savebar panel ${state}`;
+  byId("saveState").textContent = message;
 }
-function renderPeers(items:PeerStatus[]):void{
-  const root=byId("peers");if(!items.length){root.className="cards empty";root.textContent="No peers connected";return}root.className="cards";
-  root.innerHTML=items.map(p=>`<div class="card"><div class="card-top"><strong title="${esc(p.id)}">${esc(p.short_id)}</strong><span class="direction">${esc(p.direction)}</span></div><p>${esc(p.remote_addr)}${p.advertise?.length?` · ${esc(p.advertise.join(", "))}`:""}</p></div>`).join("");
+function markDirty() { dirty = true; setSaveState("Unsaved changes"); }
+
+function renderRoutes(items: any[]) {
+  const root = byId("routes");
+  if (!items.length) { root.className = "table-wrap empty"; root.textContent = "No routes yet"; return; }
+  root.className = "table-wrap";
+  root.innerHTML = `<table><thead><tr><th>Destination</th><th>Path</th><th>Hops</th><th>Services</th></tr></thead><tbody>${items.map(r => `<tr><td><code title="${esc(r.destination)}">${esc(r.domain)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length ? r.services.map((x: string) => `<span class="service-pill">${esc(x)}</span>`).join("") : "—"}</td></tr>`).join("")}</tbody></table>`;
 }
-function renderEndpoints(services:ServiceStatus[],forwards:ForwardStatus[]):void{
-  const root=byId("endpoints");const all=[...services.map(x=>({title:x.name,sub:x.target+(x.description?` · ${x.description}`:""),tag:"service",ok:true})),...forwards.map(x=>({title:x.listen,sub:`${short(x.node)} / ${x.service}${x.error?` · ${x.error}`:""}`,tag:"forward",ok:x.active}))];
-  if(!all.length){root.className="cards empty";root.textContent="Nothing configured";return}root.className="cards";root.innerHTML=all.map(x=>`<div class="card"><div class="card-top"><strong>${esc(x.title)}</strong><span class="state ${x.ok?"ok":"bad"}">${esc(x.tag)}</span></div><p>${esc(x.sub)}</p></div>`).join("");
+function renderPeers(items: any[]) {
+  const root = byId("peers");
+  if (!items.length) { root.className = "cards empty"; root.textContent = "No peers connected"; return; }
+  root.className = "cards";
+  root.innerHTML = items.map(p => `<div class="card"><div class="card-top"><strong title="${esc(p.id)}">${esc(p.short_id)}</strong><span class="direction">${esc(p.direction)}</span></div><p>${esc(p.remote_addr)}${p.advertise?.length ? ` · ${esc(p.advertise.join(", "))}` : ""}</p></div>`).join("");
 }
-function renderEvents(items:EventItem[]):void{
-  const root=byId("events"),show=items.slice(-80).reverse();if(!show.length){root.className="events empty";root.textContent="No events";return}root.className="events";root.innerHTML=show.map(e=>`<div class="event"><time>${new Date(e.time).toLocaleTimeString()}</time><span class="level ${esc(e.level)}">${esc(e.level)}</span><span>${esc(e.message)}</span></div>`).join("");
+function renderEndpoints(services: any[], forwards: any[]) {
+  const root = byId("endpoints");
+  const all = [...services.map(x => ({ title: x.name, sub: x.target + (x.description ? ` · ${x.description}` : ""), tag: "service", ok: true })), ...forwards.map(x => ({ title: x.listen, sub: `${short(x.node)} / ${x.service}${x.error ? ` · ${x.error}` : ""}`, tag: "forward", ok: x.active }))];
+  if (!all.length) { root.className = "cards empty"; root.textContent = "Nothing configured"; return; }
+  root.className = "cards";
+  root.innerHTML = all.map(x => `<div class="card"><div class="card-top"><strong>${esc(x.title)}</strong><span class="state ${x.ok ? "ok" : "bad"}">${esc(x.tag)}</span></div><p>${esc(x.sub)}</p></div>`).join("");
 }
-function render(s:Status):void{
-  last=s;byId("nodeId").textContent=s.node_id;byId("listen").textContent=s.listen.length?`Listening on ${s.listen.join(", ")}`:"No listener";byId("peerCount").textContent=String(s.peers.length);byId("routeCount").textContent=String(s.routes.length);byId("streamCount").textContent=String(s.active_streams);byId("traffic").textContent=bytes(s.bytes_sent+s.bytes_received);byId("frames").textContent=`${s.frames_sent+s.frames_received} frames · ↑ ${bytes(s.bytes_sent)} ↓ ${bytes(s.bytes_received)}`;byId("uptime").textContent=duration((Date.now()-new Date(s.started_at).getTime())/1000);byId("version").textContent=`KnotRoute ${s.version}`;byId("serviceCount").textContent=String(s.services.length);byId("forwardCount").textContent=String(s.forwards.filter(x=>x.active).length);byId("topologyBadge").textContent=`${s.routes.length} nodes`;renderRoutes(s.routes);renderPeers(s.peers);renderEndpoints(s.services,s.forwards);renderEvents(s.events);document.querySelector<HTMLElement>(".health")!.className="health online";byId("healthText").textContent="Online";
+function renderEvents(items: any[]) {
+  const root = byId("events"), show = items.slice(-80).reverse();
+  if (!show.length) { root.className = "events empty"; root.textContent = "No events"; return; }
+  root.className = "events";
+  root.innerHTML = show.map(e => `<div class="event"><time>${new Date(e.time).toLocaleTimeString()}</time><span class="level ${esc(e.level)}">${esc(e.level)}</span><span>${esc(e.message)}</span></div>`).join("");
 }
-async function refresh():Promise<void>{try{const response=await fetch("/api/status",{cache:"no-store"});if(!response.ok)throw new Error(response.statusText);render(await response.json() as Status)}catch{document.querySelector<HTMLElement>(".health")!.className="health offline";byId("healthText").textContent="Disconnected"}}
-byId<HTMLButtonElement>("copyId").addEventListener("click",async()=>{if(!last)return;await navigator.clipboard.writeText(last.node_id);byId("copyId").textContent="Copied";setTimeout(()=>byId("copyId").textContent="Copy",1200)});
-void refresh();setInterval(()=>void refresh(),2000);
+function renderStatus(s: Status) {
+  lastStatus = s;
+  byId("domain").textContent = s.domain;
+  byId("nodeId").textContent = s.node_id;
+  byId("listen").textContent = s.listen.length ? `Listening on ${s.listen.join(", ")}` : "No overlay listener";
+  byId("peerCount").textContent = String(s.peers.length);
+  byId("routeCount").textContent = String(s.routes.length);
+  byId("streamCount").textContent = String(s.active_streams);
+  byId("traffic").textContent = bytes(s.bytes_sent + s.bytes_received);
+  byId("frames").textContent = `${s.frames_sent + s.frames_received} frames · ↑ ${bytes(s.bytes_sent)} ↓ ${bytes(s.bytes_received)}`;
+  byId("uptime").textContent = duration((Date.now() - new Date(s.started_at).getTime()) / 1000);
+  byId("version").textContent = `KnotRoute ${s.version}`;
+  byId("serviceCount").textContent = String(s.services.length);
+  byId("gatewayCount").textContent = String(s.proxy.listeners.length);
+  byId("topologyBadge").textContent = `${s.routes.length} nodes`;
+  byId("socksAddress").textContent = s.proxy.socks ? `socks5://${s.proxy.socks}` : "disabled";
+  byId("httpAddress").textContent = s.proxy.http ? `http://${s.proxy.http}` : "disabled";
+  byId("pacAddress").textContent = s.proxy.pac || "disabled";
+  renderRoutes(s.routes); renderPeers(s.peers); renderEndpoints(s.services, s.forwards); renderEvents(s.events);
+  const health = document.querySelector<HTMLElement>(".health"); if (health) health.className = "health online";
+  byId("healthText").textContent = "Online";
+}
+async function refresh() {
+  try {
+    const response = await fetch("/api/status", { cache: "no-store" });
+    if (!response.ok) throw new Error(response.statusText);
+    renderStatus(await response.json());
+  } catch {
+    const health = document.querySelector<HTMLElement>(".health"); if (health) health.className = "health offline";
+    byId("healthText").textContent = "Disconnected";
+  }
+}
+
+function makeRow(root: HTMLElement, fields: Field[]) {
+  const row = document.createElement("div"); row.className = "editor-row";
+  for (const field of fields) {
+    const label = document.createElement("label"); if (field.cls) label.className = field.cls;
+    const span = document.createElement("span"); span.textContent = field.label;
+    const input = document.createElement("input"); input.dataset.key = field.key; input.value = field.value ?? ""; input.placeholder = field.placeholder ?? "";
+    input.addEventListener("input", markDirty); label.append(span, input); row.append(label);
+  }
+  const remove = document.createElement("button"); remove.className = "remove"; remove.type = "button"; remove.textContent = "×"; remove.title = "Remove";
+  remove.addEventListener("click", () => { row.remove(); markDirty(); }); row.append(remove); root.append(row);
+}
+function value(row: Element, key: string) { return (row.querySelector<HTMLInputElement>(`[data-key="${key}"]`)?.value ?? "").trim(); }
+function rows(id: string) { return [...byId(id).querySelectorAll(".editor-row")]; }
+function renderConfig(cfg: Config) {
+  currentConfig = cfg;
+  const peerRoot = byId("peerEditor"); peerRoot.replaceChildren();
+  for (const p of cfg.peers ?? []) makeRow(peerRoot, [{ key: "address", label: "Address", value: p.address, placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Expected node ID", value: p.expected_id, placeholder: "kr_…", cls: "wide" }]);
+  const serviceRoot = byId("serviceEditor"); serviceRoot.replaceChildren();
+  for (const s of cfg.services ?? []) makeRow(serviceRoot, [{ key: "name", label: "Name", value: s.name, placeholder: "http", cls: "narrow" }, { key: "target", label: "Local target", value: s.target, placeholder: "127.0.0.1:8080" }, { key: "description", label: "Description", value: s.description }, { key: "allow", label: "Allowed node IDs", value: (s.allow ?? []).join(","), placeholder: "*", cls: "wide" }]);
+  const forwardRoot = byId("forwardEditor"); forwardRoot.replaceChildren();
+  for (const f of cfg.forwards ?? []) makeRow(forwardRoot, [{ key: "listen", label: "Local listener", value: f.listen, placeholder: "127.0.0.1:2222" }, { key: "node", label: "Remote node ID", value: f.node, placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Service", value: f.service, placeholder: "ssh", cls: "narrow" }]);
+  const aliasRoot = byId("aliasEditor"); aliasRoot.replaceChildren();
+  for (const a of cfg.aliases ?? []) makeRow(aliasRoot, [{ key: "name", label: "Alias", value: a.name, placeholder: "localzet", cls: "narrow" }, { key: "node", label: "Node ID or canonical .knot address", value: a.node, placeholder: "kr_…", cls: "wide" }, { key: "description", label: "Description", value: a.description }]);
+  byId<HTMLTextAreaElement>("listenInput").value = cfg.listen.join("\n");
+  byId<HTMLTextAreaElement>("advertiseInput").value = (cfg.advertise ?? []).join("\n");
+  byId<HTMLInputElement>("proxySocks").value = cfg.proxy.socks;
+  byId<HTMLInputElement>("proxyHttp").value = cfg.proxy.http;
+  byId<HTMLInputElement>("defaultHttp").value = cfg.proxy.default_http_service;
+  byId<HTMLInputElement>("defaultHttps").value = cfg.proxy.default_https_service;
+  byId<HTMLInputElement>("proxyDirect").checked = cfg.proxy.direct;
+  byId<HTMLInputElement>("dashboardInput").value = cfg.dashboard;
+  byId<HTMLInputElement>("maxHops").value = String(cfg.routing.max_hops);
+  byId<HTMLInputElement>("lsaInterval").value = cfg.routing.lsa_interval;
+  byId<HTMLInputElement>("lsaTtl").value = cfg.routing.lsa_ttl;
+  dirty = false; setSaveState("Configuration loaded", "success");
+}
+async function loadConfig() {
+  const response = await fetch("/api/config", { cache: "no-store" });
+  if (!response.ok) throw new Error(await response.text());
+  renderConfig(await response.json());
+}
+function collectConfig(): Config {
+  if (!currentConfig) throw new Error("configuration is not loaded");
+  return {
+    ...currentConfig,
+    listen: lines(byId<HTMLTextAreaElement>("listenInput").value),
+    advertise: lines(byId<HTMLTextAreaElement>("advertiseInput").value),
+    peers: rows("peerEditor").map(row => ({ address: value(row, "address"), ...(value(row, "expected") ? { expected_id: value(row, "expected") } : {}) })).filter(x => x.address),
+    services: rows("serviceEditor").map(row => ({ name: value(row, "name"), target: value(row, "target"), ...(value(row, "description") ? { description: value(row, "description") } : {}), ...(csv(value(row, "allow")).length ? { allow: csv(value(row, "allow")) } : {}) })).filter(x => x.name || x.target),
+    forwards: rows("forwardEditor").map(row => ({ listen: value(row, "listen"), node: value(row, "node"), service: value(row, "service") })).filter(x => x.listen || x.node || x.service),
+    aliases: rows("aliasEditor").map(row => ({ name: value(row, "name"), node: value(row, "node"), ...(value(row, "description") ? { description: value(row, "description") } : {}) })).filter(x => x.name || x.node),
+    dashboard: byId<HTMLInputElement>("dashboardInput").value.trim(),
+    proxy: { socks: byId<HTMLInputElement>("proxySocks").value.trim(), http: byId<HTMLInputElement>("proxyHttp").value.trim(), direct: byId<HTMLInputElement>("proxyDirect").checked, default_http_service: byId<HTMLInputElement>("defaultHttp").value.trim(), default_https_service: byId<HTMLInputElement>("defaultHttps").value.trim() },
+    routing: { lsa_interval: byId<HTMLInputElement>("lsaInterval").value.trim(), lsa_ttl: byId<HTMLInputElement>("lsaTtl").value.trim(), max_hops: Number(byId<HTMLInputElement>("maxHops").value) }
+  };
+}
+async function saveConfig() {
+  const button = byId<HTMLButtonElement>("saveConfig"); button.disabled = true; setSaveState("Validating and saving…");
+  try {
+    const next = collectConfig();
+    const response = await fetch("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
+    if (!response.ok) throw new Error((await response.text()).trim());
+    currentConfig = next; dirty = false; setSaveState("Saved. Restarting node…", "success");
+    await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    setTimeout(() => void loadConfig().catch(() => undefined), 2200);
+  } catch (error) { setSaveState(error instanceof Error ? error.message : String(error), "error"); }
+  finally { button.disabled = false; }
+}
+
+for (const tab of document.querySelectorAll<HTMLButtonElement>(".tab")) tab.addEventListener("click", () => {
+  for (const x of document.querySelectorAll(".tab")) x.classList.toggle("active", x === tab);
+  for (const page of document.querySelectorAll<HTMLElement>(".tab-page")) page.classList.toggle("active", page.dataset.page === tab.dataset.tab);
+});
+for (const input of document.querySelectorAll("input,textarea")) input.addEventListener("input", markDirty);
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) button.addEventListener("click", async () => {
+  const target = byId(button.dataset.copy ?? ""); await navigator.clipboard.writeText(target.textContent ?? ""); const old = button.textContent; button.textContent = "Copied"; setTimeout(() => button.textContent = old, 1200);
+});
+byId("addPeer").addEventListener("click", () => makeRow(byId("peerEditor"), [{ key: "address", label: "Address", placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Expected node ID", placeholder: "kr_…", cls: "wide" }]));
+byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Name", placeholder: "http", cls: "narrow" }, { key: "target", label: "Local target", placeholder: "127.0.0.1:8080" }, { key: "description", label: "Description" }, { key: "allow", label: "Allowed node IDs", placeholder: "*", cls: "wide" }]));
+byId("addForward").addEventListener("click", () => makeRow(byId("forwardEditor"), [{ key: "listen", label: "Local listener", placeholder: "127.0.0.1:2222" }, { key: "node", label: "Remote node ID", placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Service", placeholder: "ssh", cls: "narrow" }]));
+byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Alias", placeholder: "localzet", cls: "narrow" }, { key: "node", label: "Node ID or canonical .knot address", placeholder: "kr_…", cls: "wide" }, { key: "description", label: "Description" }]));
+byId("saveConfig").addEventListener("click", () => void saveConfig());
+byId("restartNode").addEventListener("click", async () => { await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Restart requested", "success"); });
+byId("stopNode").addEventListener("click", async () => { if (!confirm("Stop the KnotRoute node? The tray controller can start it again.")) return; await fetch("/api/shutdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Node stopped", "success"); });
+window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
+
+void refresh(); void loadConfig().catch(error => setSaveState(error instanceof Error ? error.message : String(error), "error"));
+setInterval(() => void refresh(), 2000);

@@ -5,12 +5,23 @@ const byId = (id) => {
         throw new Error(`missing element #${id}`);
     return node;
 };
-let last = null;
+let lastStatus = null;
+let currentConfig = null;
+let dirty = false;
 const short = (id) => id && id.length > 18 ? `${id.slice(0, 10)}…${id.slice(-4)}` : id ?? "—";
 const bytes = (n) => { if (!n)
     return "0 B"; const u = ["B", "KiB", "MiB", "GiB", "TiB"]; const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1); return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`; };
 const duration = (seconds) => { const n = Math.max(0, Math.floor(seconds)), d = Math.floor(n / 86400), h = Math.floor(n % 86400 / 3600), m = Math.floor(n % 3600 / 60), s = n % 60; return [[d, "d"], [h, "h"], [m, "m"], [s, "s"]].filter(([v]) => Number(v) > 0 || s === Number(v)).map(([v, u]) => `${v}${u}`).join(" "); };
 const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c] ?? c));
+const lines = (value) => value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+const csv = (value) => value.split(",").map(x => x.trim()).filter(Boolean);
+function setSaveState(message, state = "") {
+    const bar = document.querySelector(".savebar");
+    if (bar)
+        bar.className = `savebar panel ${state}`;
+    byId("saveState").textContent = message;
+}
+function markDirty() { dirty = true; setSaveState("Unsaved changes"); }
 function renderRoutes(items) {
     const root = byId("routes");
     if (!items.length) {
@@ -19,7 +30,7 @@ function renderRoutes(items) {
         return;
     }
     root.className = "table-wrap";
-    root.innerHTML = `<table><thead><tr><th>Destination</th><th>Path</th><th>Hops</th><th>Services</th></tr></thead><tbody>${items.map(r => `<tr><td><code title="${esc(r.destination)}">${esc(r.short_id)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length ? r.services.map(x => `<span class="service-pill">${esc(x)}</span>`).join("") : "—"}</td></tr>`).join("")}</tbody></table>`;
+    root.innerHTML = `<table><thead><tr><th>Destination</th><th>Path</th><th>Hops</th><th>Services</th></tr></thead><tbody>${items.map(r => `<tr><td><code title="${esc(r.destination)}">${esc(r.domain)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length ? r.services.map((x) => `<span class="service-pill">${esc(x)}</span>`).join("") : "—"}</td></tr>`).join("")}</tbody></table>`;
 }
 function renderPeers(items) {
     const root = byId("peers");
@@ -52,10 +63,11 @@ function renderEvents(items) {
     root.className = "events";
     root.innerHTML = show.map(e => `<div class="event"><time>${new Date(e.time).toLocaleTimeString()}</time><span class="level ${esc(e.level)}">${esc(e.level)}</span><span>${esc(e.message)}</span></div>`).join("");
 }
-function render(s) {
-    last = s;
+function renderStatus(s) {
+    lastStatus = s;
+    byId("domain").textContent = s.domain;
     byId("nodeId").textContent = s.node_id;
-    byId("listen").textContent = s.listen.length ? `Listening on ${s.listen.join(", ")}` : "No listener";
+    byId("listen").textContent = s.listen.length ? `Listening on ${s.listen.join(", ")}` : "No overlay listener";
     byId("peerCount").textContent = String(s.peers.length);
     byId("routeCount").textContent = String(s.routes.length);
     byId("streamCount").textContent = String(s.active_streams);
@@ -64,26 +76,167 @@ function render(s) {
     byId("uptime").textContent = duration((Date.now() - new Date(s.started_at).getTime()) / 1000);
     byId("version").textContent = `KnotRoute ${s.version}`;
     byId("serviceCount").textContent = String(s.services.length);
-    byId("forwardCount").textContent = String(s.forwards.filter(x => x.active).length);
+    byId("gatewayCount").textContent = String(s.proxy.listeners.length);
     byId("topologyBadge").textContent = `${s.routes.length} nodes`;
+    byId("socksAddress").textContent = s.proxy.socks ? `socks5://${s.proxy.socks}` : "disabled";
+    byId("httpAddress").textContent = s.proxy.http ? `http://${s.proxy.http}` : "disabled";
+    byId("pacAddress").textContent = s.proxy.pac || "disabled";
     renderRoutes(s.routes);
     renderPeers(s.peers);
     renderEndpoints(s.services, s.forwards);
     renderEvents(s.events);
-    document.querySelector(".health").className = "health online";
+    const health = document.querySelector(".health");
+    if (health)
+        health.className = "health online";
     byId("healthText").textContent = "Online";
 }
-async function refresh() { try {
-    const response = await fetch("/api/status", { cache: "no-store" });
-    if (!response.ok)
-        throw new Error(response.statusText);
-    render(await response.json());
+async function refresh() {
+    try {
+        const response = await fetch("/api/status", { cache: "no-store" });
+        if (!response.ok)
+            throw new Error(response.statusText);
+        renderStatus(await response.json());
+    }
+    catch {
+        const health = document.querySelector(".health");
+        if (health)
+            health.className = "health offline";
+        byId("healthText").textContent = "Disconnected";
+    }
 }
-catch {
-    document.querySelector(".health").className = "health offline";
-    byId("healthText").textContent = "Disconnected";
-} }
-byId("copyId").addEventListener("click", async () => { if (!last)
-    return; await navigator.clipboard.writeText(last.node_id); byId("copyId").textContent = "Copied"; setTimeout(() => byId("copyId").textContent = "Copy", 1200); });
+function makeRow(root, fields) {
+    const row = document.createElement("div");
+    row.className = "editor-row";
+    for (const field of fields) {
+        const label = document.createElement("label");
+        if (field.cls)
+            label.className = field.cls;
+        const span = document.createElement("span");
+        span.textContent = field.label;
+        const input = document.createElement("input");
+        input.dataset.key = field.key;
+        input.value = field.value ?? "";
+        input.placeholder = field.placeholder ?? "";
+        input.addEventListener("input", markDirty);
+        label.append(span, input);
+        row.append(label);
+    }
+    const remove = document.createElement("button");
+    remove.className = "remove";
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.title = "Remove";
+    remove.addEventListener("click", () => { row.remove(); markDirty(); });
+    row.append(remove);
+    root.append(row);
+}
+function value(row, key) { return (row.querySelector(`[data-key="${key}"]`)?.value ?? "").trim(); }
+function rows(id) { return [...byId(id).querySelectorAll(".editor-row")]; }
+function renderConfig(cfg) {
+    currentConfig = cfg;
+    const peerRoot = byId("peerEditor");
+    peerRoot.replaceChildren();
+    for (const p of cfg.peers ?? [])
+        makeRow(peerRoot, [{ key: "address", label: "Address", value: p.address, placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Expected node ID", value: p.expected_id, placeholder: "kr_…", cls: "wide" }]);
+    const serviceRoot = byId("serviceEditor");
+    serviceRoot.replaceChildren();
+    for (const s of cfg.services ?? [])
+        makeRow(serviceRoot, [{ key: "name", label: "Name", value: s.name, placeholder: "http", cls: "narrow" }, { key: "target", label: "Local target", value: s.target, placeholder: "127.0.0.1:8080" }, { key: "description", label: "Description", value: s.description }, { key: "allow", label: "Allowed node IDs", value: (s.allow ?? []).join(","), placeholder: "*", cls: "wide" }]);
+    const forwardRoot = byId("forwardEditor");
+    forwardRoot.replaceChildren();
+    for (const f of cfg.forwards ?? [])
+        makeRow(forwardRoot, [{ key: "listen", label: "Local listener", value: f.listen, placeholder: "127.0.0.1:2222" }, { key: "node", label: "Remote node ID", value: f.node, placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Service", value: f.service, placeholder: "ssh", cls: "narrow" }]);
+    const aliasRoot = byId("aliasEditor");
+    aliasRoot.replaceChildren();
+    for (const a of cfg.aliases ?? [])
+        makeRow(aliasRoot, [{ key: "name", label: "Alias", value: a.name, placeholder: "localzet", cls: "narrow" }, { key: "node", label: "Node ID or canonical .knot address", value: a.node, placeholder: "kr_…", cls: "wide" }, { key: "description", label: "Description", value: a.description }]);
+    byId("listenInput").value = cfg.listen.join("\n");
+    byId("advertiseInput").value = (cfg.advertise ?? []).join("\n");
+    byId("proxySocks").value = cfg.proxy.socks;
+    byId("proxyHttp").value = cfg.proxy.http;
+    byId("defaultHttp").value = cfg.proxy.default_http_service;
+    byId("defaultHttps").value = cfg.proxy.default_https_service;
+    byId("proxyDirect").checked = cfg.proxy.direct;
+    byId("dashboardInput").value = cfg.dashboard;
+    byId("maxHops").value = String(cfg.routing.max_hops);
+    byId("lsaInterval").value = cfg.routing.lsa_interval;
+    byId("lsaTtl").value = cfg.routing.lsa_ttl;
+    dirty = false;
+    setSaveState("Configuration loaded", "success");
+}
+async function loadConfig() {
+    const response = await fetch("/api/config", { cache: "no-store" });
+    if (!response.ok)
+        throw new Error(await response.text());
+    renderConfig(await response.json());
+}
+function collectConfig() {
+    if (!currentConfig)
+        throw new Error("configuration is not loaded");
+    return {
+        ...currentConfig,
+        listen: lines(byId("listenInput").value),
+        advertise: lines(byId("advertiseInput").value),
+        peers: rows("peerEditor").map(row => ({ address: value(row, "address"), ...(value(row, "expected") ? { expected_id: value(row, "expected") } : {}) })).filter(x => x.address),
+        services: rows("serviceEditor").map(row => ({ name: value(row, "name"), target: value(row, "target"), ...(value(row, "description") ? { description: value(row, "description") } : {}), ...(csv(value(row, "allow")).length ? { allow: csv(value(row, "allow")) } : {}) })).filter(x => x.name || x.target),
+        forwards: rows("forwardEditor").map(row => ({ listen: value(row, "listen"), node: value(row, "node"), service: value(row, "service") })).filter(x => x.listen || x.node || x.service),
+        aliases: rows("aliasEditor").map(row => ({ name: value(row, "name"), node: value(row, "node"), ...(value(row, "description") ? { description: value(row, "description") } : {}) })).filter(x => x.name || x.node),
+        dashboard: byId("dashboardInput").value.trim(),
+        proxy: { socks: byId("proxySocks").value.trim(), http: byId("proxyHttp").value.trim(), direct: byId("proxyDirect").checked, default_http_service: byId("defaultHttp").value.trim(), default_https_service: byId("defaultHttps").value.trim() },
+        routing: { lsa_interval: byId("lsaInterval").value.trim(), lsa_ttl: byId("lsaTtl").value.trim(), max_hops: Number(byId("maxHops").value) }
+    };
+}
+async function saveConfig() {
+    const button = byId("saveConfig");
+    button.disabled = true;
+    setSaveState("Validating and saving…");
+    try {
+        const next = collectConfig();
+        const response = await fetch("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
+        if (!response.ok)
+            throw new Error((await response.text()).trim());
+        currentConfig = next;
+        dirty = false;
+        setSaveState("Saved. Restarting node…", "success");
+        await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        setTimeout(() => void loadConfig().catch(() => undefined), 2200);
+    }
+    catch (error) {
+        setSaveState(error instanceof Error ? error.message : String(error), "error");
+    }
+    finally {
+        button.disabled = false;
+    }
+}
+for (const tab of document.querySelectorAll(".tab"))
+    tab.addEventListener("click", () => {
+        for (const x of document.querySelectorAll(".tab"))
+            x.classList.toggle("active", x === tab);
+        for (const page of document.querySelectorAll(".tab-page"))
+            page.classList.toggle("active", page.dataset.page === tab.dataset.tab);
+    });
+for (const input of document.querySelectorAll("input,textarea"))
+    input.addEventListener("input", markDirty);
+for (const button of document.querySelectorAll("[data-copy]"))
+    button.addEventListener("click", async () => {
+        const target = byId(button.dataset.copy ?? "");
+        await navigator.clipboard.writeText(target.textContent ?? "");
+        const old = button.textContent;
+        button.textContent = "Copied";
+        setTimeout(() => button.textContent = old, 1200);
+    });
+byId("addPeer").addEventListener("click", () => makeRow(byId("peerEditor"), [{ key: "address", label: "Address", placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Expected node ID", placeholder: "kr_…", cls: "wide" }]));
+byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Name", placeholder: "http", cls: "narrow" }, { key: "target", label: "Local target", placeholder: "127.0.0.1:8080" }, { key: "description", label: "Description" }, { key: "allow", label: "Allowed node IDs", placeholder: "*", cls: "wide" }]));
+byId("addForward").addEventListener("click", () => makeRow(byId("forwardEditor"), [{ key: "listen", label: "Local listener", placeholder: "127.0.0.1:2222" }, { key: "node", label: "Remote node ID", placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Service", placeholder: "ssh", cls: "narrow" }]));
+byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Alias", placeholder: "localzet", cls: "narrow" }, { key: "node", label: "Node ID or canonical .knot address", placeholder: "kr_…", cls: "wide" }, { key: "description", label: "Description" }]));
+byId("saveConfig").addEventListener("click", () => void saveConfig());
+byId("restartNode").addEventListener("click", async () => { await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Restart requested", "success"); });
+byId("stopNode").addEventListener("click", async () => { if (!confirm("Stop the KnotRoute node? The tray controller can start it again."))
+    return; await fetch("/api/shutdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Node stopped", "success"); });
+window.addEventListener("beforeunload", event => { if (dirty) {
+    event.preventDefault();
+    event.returnValue = "";
+} });
 void refresh();
+void loadConfig().catch(error => setSaveState(error instanceof Error ? error.message : String(error), "error"));
 setInterval(() => void refresh(), 2000);

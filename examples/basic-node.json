@@ -5,13 +5,21 @@
   "peers": [],
   "services": [
     {
-      "name": "web",
+      "name": "http",
       "target": "127.0.0.1:8080",
       "description": "local development server",
       "allow": []
     }
   ],
   "forwards": [],
+  "aliases": [],
+  "proxy": {
+    "socks": "127.0.0.1:9477",
+    "http": "127.0.0.1:9478",
+    "direct": true,
+    "default_http_service": "http",
+    "default_https_service": "https"
+  },
   "dashboard": "127.0.0.1:8484",
   "routing": {
     "lsa_interval": "20s",

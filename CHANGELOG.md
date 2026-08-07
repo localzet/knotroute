@@ -1,17 +1,21 @@
 # Changelog
 
-## 1.0.0 — 2026-08-05
+## 2.0.0
 
-Initial complete release.
+- Added versioned, checksummed, self-authenticating `.knot` node addresses.
+- Added `service.<node>.knot` routing and context-sensitive default services.
+- Added local human-readable aliases and signed alias export/import records.
+- Added local SOCKS5 CONNECT gateway with remote `.knot` name resolution.
+- Added HTTP proxy and CONNECT gateway with optional direct fallback.
+- Added a PAC endpoint that selects only `.knot` destinations.
+- Replaced the read-only dashboard with a full local configuration interface.
+- Added validated atomic configuration updates and in-process reload/shutdown controls.
+- Added a dependency-free native Windows tray controller.
+- Added per-user Windows installation, startup, PAC integration, setting backup, and restoration.
+- Added a native Windows Service Control Manager wrapper and corrected service packaging.
+- Added HTTP and SOCKS integration tests across a real A → B → C relay path.
+- Added bounded non-blocking relay retries for stream-control packets during link-state convergence.
 
-- self-certifying Ed25519 node identities;
-- mutually authenticated TLS 1.3 peer links;
-- signed expiring link-state advertisements;
-- bidirectional-edge validation and multi-hop shortest-path routing;
-- end-to-end X25519/HKDF-SHA-256/AES-256-GCM TCP streams;
-- named service publication, source-ID ACLs, and local forwards;
-- reconnecting seed peers, duplicate-link resolution, TTL, and packet deduplication;
-- embedded read-only dashboard and status API;
-- CLI initialization, validation, runtime, and identity commands;
-- race-tested three-node A → B → C integration test;
-- static release scripts, Docker, systemd, Windows service, and GitHub Actions.
+## 1.0.0
+
+- Initial encrypted multi-hop service overlay.

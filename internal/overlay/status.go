@@ -12,6 +12,7 @@ type PeerStatus struct {
 
 type RouteStatus struct {
 	Destination string   `json:"destination"`
+	Domain      string   `json:"domain"`
 	ShortID     string   `json:"short_id"`
 	NextHop     string   `json:"next_hop"`
 	Hops        int      `json:"hops"`
@@ -43,6 +44,7 @@ type Status struct {
 	Name           string          `json:"name"`
 	Version        string          `json:"version"`
 	NodeID         string          `json:"node_id"`
+	Domain         string          `json:"domain"`
 	ShortID        string          `json:"short_id"`
 	StartedAt      time.Time       `json:"started_at"`
 	Listen         []string        `json:"listen"`
@@ -50,10 +52,27 @@ type Status struct {
 	Routes         []RouteStatus   `json:"routes"`
 	Services       []ServiceStatus `json:"services"`
 	Forwards       []ForwardStatus `json:"forwards"`
+	Aliases        []AliasStatus   `json:"aliases"`
+	Proxy          ProxyStatus     `json:"proxy"`
 	ActiveStreams  int             `json:"active_streams"`
 	BytesSent      uint64          `json:"bytes_sent"`
 	BytesReceived  uint64          `json:"bytes_received"`
 	FramesSent     uint64          `json:"frames_sent"`
 	FramesReceived uint64          `json:"frames_received"`
 	Events         []Event         `json:"events"`
+}
+
+type AliasStatus struct {
+	Name        string `json:"name"`
+	Node        string `json:"node"`
+	Domain      string `json:"domain"`
+	Description string `json:"description,omitempty"`
+}
+
+type ProxyStatus struct {
+	SOCKS     string   `json:"socks"`
+	HTTP      string   `json:"http"`
+	PAC       string   `json:"pac"`
+	Direct    bool     `json:"direct"`
+	Listeners []string `json:"listeners"`
 }

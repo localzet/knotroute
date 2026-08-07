@@ -13,18 +13,21 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/localzet/knotroute/internal/config"
 	"github.com/localzet/knotroute/internal/identity"
+	"github.com/localzet/knotroute/internal/naming"
 	"github.com/localzet/knotroute/internal/nodeid"
 	"github.com/localzet/knotroute/internal/protocol"
+	proxyserver "github.com/localzet/knotroute/internal/proxy"
 	"github.com/localzet/knotroute/internal/router"
 )
 
-const Version = "1.0.0"
+const Version = "2.0.0"
 
 type counters struct {
 	bytesSent, bytesReceived, framesSent, framesReceived atomic.Uint64
@@ -70,8 +73,14 @@ type Node struct {
 	eventsMu sync.RWMutex
 	events   []Event
 
-	dashboardServer *http.Server
-	stats           counters
+	dashboardServer   *http.Server
+	proxyGateway      *proxyserver.Gateway
+	proxyAddresses    []string
+	restartRequested  chan struct{}
+	shutdownRequested chan struct{}
+	restartOnce       sync.Once
+	shutdownOnce      sync.Once
+	stats             counters
 }
 
 func New(cfg config.Config, id *identity.Identity) (*Node, error) {
@@ -91,6 +100,7 @@ func New(cfg config.Config, id *identity.Identity) (*Node, error) {
 		cfg: cfg, id: id, serverTLS: serverTLS, clientTLS: clientTLS,
 		peers: map[nodeid.ID]*peer{}, lsas: map[nodeid.ID]protocol.LSA{}, routes: map[nodeid.ID]router.Route{},
 		seenPackets: map[[16]byte]time.Time{}, streams: map[[16]byte]*stream{}, pending: map[[16]byte]chan openResult{},
+		restartRequested: make(chan struct{}), shutdownRequested: make(chan struct{}),
 	}, nil
 }
 
@@ -156,6 +166,23 @@ func (n *Node) Start(parent context.Context) error {
 		n.wg.Add(1)
 		go n.maintenanceLoop()
 		n.startForwards()
+		gateway := &proxyserver.Gateway{
+			Aliases: n.cfg.Aliases, Direct: n.cfg.Proxy.Direct,
+			DefaultHTTP: n.cfg.Proxy.DefaultHTTP, DefaultHTTPS: n.cfg.Proxy.DefaultHTTPS,
+			DialOverlay: n.OpenStream,
+			Event:       n.addEvent,
+		}
+		addresses, err := gateway.Start(n.ctx, n.cfg.Proxy.SOCKS, n.cfg.Proxy.HTTP)
+		if err != nil {
+			startErr = err
+			n.Stop()
+			return
+		}
+		n.proxyGateway = gateway
+		n.proxyAddresses = addresses
+		for _, address := range addresses {
+			n.addEvent("info", "local gateway available at "+address)
+		}
 		if n.cfg.Dashboard != "" {
 			if err := n.startDashboard(); err != nil {
 				startErr = err
@@ -171,6 +198,9 @@ func (n *Node) Stop() {
 	n.stopOnce.Do(func() {
 		if n.cancel != nil {
 			n.cancel()
+		}
+		if n.proxyGateway != nil {
+			n.proxyGateway.Close()
 		}
 		n.listenersMu.Lock()
 		for _, l := range n.listeners {
@@ -209,7 +239,12 @@ func (n *Node) Stop() {
 	})
 }
 
-func (n *Node) ID() nodeid.ID { return n.id.ID }
+func (n *Node) ID() nodeid.ID                      { return n.id.ID }
+func (n *Node) Domain() string                     { return naming.CanonicalDomain(n.id.ID) }
+func (n *Node) RestartRequested() <-chan struct{}  { return n.restartRequested }
+func (n *Node) ShutdownRequested() <-chan struct{} { return n.shutdownRequested }
+func (n *Node) RequestRestart()                    { n.restartOnce.Do(func() { close(n.restartRequested) }) }
+func (n *Node) RequestShutdown()                   { n.shutdownOnce.Do(func() { close(n.shutdownRequested) }) }
 func (n *Node) Addresses() []string {
 	n.listenersMu.RLock()
 	defer n.listenersMu.RUnlock()
@@ -255,7 +290,7 @@ func (n *Node) dialLoop(cfgPeer config.Peer) {
 	defer n.wg.Done()
 	var expected *nodeid.ID
 	if cfgPeer.ExpectedID != "" {
-		id, _ := nodeid.Parse(cfgPeer.ExpectedID)
+		id, _ := naming.ParseNodeReference(cfgPeer.ExpectedID)
 		expected = &id
 	}
 	backoff := time.Second
@@ -498,12 +533,35 @@ func (n *Node) handlePacket(packet protocol.Packet) {
 		n.seenPackets[packet.PacketID] = time.Now()
 		n.seenMu.Unlock()
 		packet.TTL--
+		if isStreamControlPacket(packet.Kind) {
+			// Topology announcements and stream-control packets can cross during
+			// startup. Forward control traffic from a worker so a temporary missing
+			// route is retried without blocking this peer's frame reader (and thus
+			// without blocking the LSA that may establish the route).
+			n.wg.Add(1)
+			go func(p protocol.Packet) {
+				defer n.wg.Done()
+				if err := n.sendPacketWithRetry(p, 5*time.Second); err != nil && n.ctx.Err() == nil {
+					n.addEvent("warn", "relay control packet: "+err.Error())
+				}
+			}(packet)
+			return
+		}
 		if err := n.sendPacket(packet); err != nil {
 			n.addEvent("warn", "relay packet: "+err.Error())
 		}
 		return
 	}
 	n.handleLocalPacket(packet)
+}
+
+func isStreamControlPacket(kind byte) bool {
+	switch kind {
+	case protocol.PacketOpen, protocol.PacketOpenAck, protocol.PacketError, protocol.PacketReady, protocol.PacketClose:
+		return true
+	default:
+		return false
+	}
 }
 
 func (n *Node) newPacket(kind byte, dst nodeid.ID, streamID [16]byte, seq uint64, payload []byte) protocol.Packet {
@@ -522,7 +580,19 @@ func (n *Node) addEvent(level, message string) {
 }
 
 func (n *Node) Status() Status {
-	status := Status{Name: "KnotRoute", Version: Version, NodeID: n.id.ID.String(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: n.Addresses(), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, Forwards: []ForwardStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
+	status := Status{Name: "KnotRoute", Version: Version, NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: n.Addresses(), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
+	status.Proxy = ProxyStatus{SOCKS: n.cfg.Proxy.SOCKS, HTTP: n.cfg.Proxy.HTTP, Direct: n.cfg.Proxy.Direct, Listeners: append([]string(nil), n.proxyAddresses...)}
+	for _, address := range n.proxyAddresses {
+		if strings.HasPrefix(address, "socks5://") {
+			status.Proxy.SOCKS = strings.TrimPrefix(address, "socks5://")
+		}
+		if strings.HasPrefix(address, "http://") {
+			status.Proxy.HTTP = strings.TrimPrefix(address, "http://")
+		}
+	}
+	if n.cfg.Dashboard != "" {
+		status.Proxy.PAC = "http://" + n.cfg.Dashboard + "/proxy.pac"
+	}
 	n.peersMu.RLock()
 	for _, p := range n.peers {
 		direction := "inbound"
@@ -535,7 +605,7 @@ func (n *Node) Status() Status {
 	sort.Slice(status.Peers, func(i, j int) bool { return status.Peers[i].ID < status.Peers[j].ID })
 	n.topologyMu.RLock()
 	for dest, route := range n.routes {
-		r := RouteStatus{Destination: dest.String(), ShortID: dest.Short(), NextHop: route.NextHop.String(), Hops: route.Hops}
+		r := RouteStatus{Destination: dest.String(), Domain: naming.CanonicalDomain(dest), ShortID: dest.Short(), NextHop: route.NextHop.String(), Hops: route.Hops}
 		for _, id := range route.Path {
 			r.Path = append(r.Path, id.String())
 		}
@@ -556,8 +626,15 @@ func (n *Node) Status() Status {
 	for _, s := range n.cfg.Services {
 		status.Services = append(status.Services, ServiceStatus{Name: s.Name, Target: s.Target, Description: s.Description})
 	}
+	for _, a := range n.cfg.Aliases {
+		resolved, err := naming.ResolveHost(a.Name+naming.Suffix, n.cfg.Aliases)
+		if err != nil {
+			continue
+		}
+		status.Aliases = append(status.Aliases, AliasStatus{Name: a.Name, Node: resolved.Node.String(), Domain: a.Name + naming.Suffix, Description: a.Description})
+	}
 	n.forwardsMu.RLock()
-	status.Forwards = append([]ForwardStatus(nil), n.forwardState...)
+	status.Forwards = append(status.Forwards, n.forwardState...)
 	n.forwardsMu.RUnlock()
 	n.streamsMu.Lock()
 	status.ActiveStreams = len(n.streams)
@@ -589,7 +666,11 @@ func (n *Node) allowed(service config.Service, src nodeid.ID) bool {
 		return true
 	}
 	for _, allowed := range service.Allow {
-		if allowed == "*" || allowed == src.String() {
+		if allowed == "*" {
+			return true
+		}
+		id, err := naming.ParseNodeReference(allowed)
+		if err == nil && id == src {
 			return true
 		}
 	}

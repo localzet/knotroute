@@ -10,30 +10,121 @@
 <body>
   <div class="shell">
     <header>
-      <div class="brand"><span class="mark">K</span><div><h1>KnotRoute</h1><p>encrypted service overlay</p></div></div>
-      <div class="health"><span id="pulse"></span><strong id="healthText">Connecting</strong></div>
+      <div class="brand"><span class="mark">K</span><div><h1>KnotRoute</h1><p>private service overlay</p></div></div>
+      <div class="header-actions">
+        <div class="health"><span id="pulse"></span><strong id="healthText">Connecting</strong></div>
+        <button class="button ghost" id="restartNode">Restart</button>
+        <button class="button danger" id="stopNode">Stop</button>
+      </div>
     </header>
+
+    <nav class="tabs" aria-label="Dashboard sections">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="network">Network</button>
+      <button class="tab" data-tab="services">Services</button>
+      <button class="tab" data-tab="names">Names</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
     <main>
-      <section class="hero panel">
-        <div><span class="eyebrow">NODE IDENTITY</span><div class="identity-row"><code id="nodeId">—</code><button id="copyId">Copy</button></div><p id="listen">Starting…</p></div>
-        <div class="hero-stats"><div><strong id="peerCount">0</strong><span>direct peers</span></div><div><strong id="routeCount">0</strong><span>reachable nodes</span></div><div><strong id="streamCount">0</strong><span>active streams</span></div></div>
-      </section>
-      <section class="metric-grid">
-        <article class="panel metric"><span>Transferred</span><strong id="traffic">0 B</strong><small id="frames">0 frames</small></article>
-        <article class="panel metric"><span>Uptime</span><strong id="uptime">0s</strong><small id="version">—</small></article>
-        <article class="panel metric"><span>Published</span><strong id="serviceCount">0</strong><small>local TCP services</small></article>
-        <article class="panel metric"><span>Forwards</span><strong id="forwardCount">0</strong><small>local listeners</small></article>
-      </section>
-      <section class="two-col">
-        <article class="panel"><div class="section-title"><div><span class="eyebrow">TOPOLOGY</span><h2>Routes</h2></div><span class="badge" id="topologyBadge">0 nodes</span></div><div id="routes" class="table-wrap empty">No routes yet</div></article>
-        <article class="panel"><div class="section-title"><div><span class="eyebrow">LINKS</span><h2>Peers</h2></div></div><div id="peers" class="cards empty">No peers connected</div></article>
-      </section>
-      <section class="two-col lower">
-        <article class="panel"><div class="section-title"><div><span class="eyebrow">ENDPOINTS</span><h2>Services & forwards</h2></div></div><div id="endpoints" class="cards empty">Nothing configured</div></article>
-        <article class="panel"><div class="section-title"><div><span class="eyebrow">RUNTIME</span><h2>Event log</h2></div></div><div id="events" class="events empty">No events</div></article>
+      <div class="tab-page active" data-page="overview">
+        <section class="hero panel">
+          <div class="identity-block">
+            <span class="eyebrow">CANONICAL .KNOT ADDRESS</span>
+            <div class="identity-row"><code id="domain">—</code><button class="copy" data-copy="domain">Copy</button></div>
+            <div class="secondary-id"><span>Node ID</span><code id="nodeId">—</code><button class="copy mini" data-copy="nodeId">Copy</button></div>
+            <p id="listen">Starting…</p>
+          </div>
+          <div class="hero-stats">
+            <div><strong id="peerCount">0</strong><span>direct peers</span></div>
+            <div><strong id="routeCount">0</strong><span>reachable nodes</span></div>
+            <div><strong id="streamCount">0</strong><span>active streams</span></div>
+          </div>
+        </section>
+
+        <section class="metric-grid">
+          <article class="panel metric"><span>Transferred</span><strong id="traffic">0 B</strong><small id="frames">0 frames</small></article>
+          <article class="panel metric"><span>Uptime</span><strong id="uptime">0s</strong><small id="version">—</small></article>
+          <article class="panel metric"><span>Published</span><strong id="serviceCount">0</strong><small>local TCP services</small></article>
+          <article class="panel metric"><span>Local gateways</span><strong id="gatewayCount">0</strong><small>SOCKS5 and HTTP</small></article>
+        </section>
+
+        <section class="access-grid">
+          <article class="panel access-card"><span class="eyebrow">SOCKS5</span><code id="socksAddress">disabled</code><p>Use remote DNS / hostname mode. Ordinary hosts can go direct.</p></article>
+          <article class="panel access-card"><span class="eyebrow">HTTP / CONNECT</span><code id="httpAddress">disabled</code><p>Suitable for browsers and system PAC integration.</p></article>
+          <article class="panel access-card"><span class="eyebrow">PAC SCRIPT</span><code id="pacAddress">disabled</code><p>Only <code>*.knot</code> is proxied. Everything else remains DIRECT.</p></article>
+        </section>
+
+        <section class="two-col">
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">TOPOLOGY</span><h2>Routes</h2></div><span class="badge" id="topologyBadge">0 nodes</span></div><div id="routes" class="table-wrap empty">No routes yet</div></article>
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">LINKS</span><h2>Peers</h2></div></div><div id="peers" class="cards empty">No peers connected</div></article>
+        </section>
+
+        <section class="two-col lower">
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">ENDPOINTS</span><h2>Services & forwards</h2></div></div><div id="endpoints" class="cards empty">Nothing configured</div></article>
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">RUNTIME</span><h2>Event log</h2></div></div><div id="events" class="events empty">No events</div></article>
+        </section>
+      </div>
+
+      <div class="tab-page" data-page="network">
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">SEED CONNECTIONS</span><h2>Peers</h2><p>At least one reachable seed is enough to join an existing overlay.</p></div><button class="button" id="addPeer">Add peer</button></div>
+          <div id="peerEditor" class="editor-list"></div>
+        </section>
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">LOCAL LISTENERS</span><h2>Transport</h2></div></div>
+          <div class="form-grid two"><label><span>Listen addresses</span><textarea id="listenInput" rows="4" placeholder="0.0.0.0:7447"></textarea></label><label><span>Advertised addresses</span><textarea id="advertiseInput" rows="4" placeholder="public.example:7447"></textarea></label></div>
+        </section>
+      </div>
+
+      <div class="tab-page" data-page="services">
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">PUBLISH</span><h2>Local services</h2><p>Each service becomes <code>service.your-address.knot</code>.</p></div><button class="button" id="addService">Add service</button></div>
+          <div id="serviceEditor" class="editor-list"></div>
+        </section>
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">LOCAL PORTS</span><h2>Static forwards</h2></div><button class="button" id="addForward">Add forward</button></div>
+          <div id="forwardEditor" class="editor-list"></div>
+        </section>
+      </div>
+
+      <div class="tab-page" data-page="names">
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">ADDRESS BOOK</span><h2>Local aliases</h2><p><code>git.localzet.knot</code> resolves locally to the selected node and service.</p></div><button class="button" id="addAlias">Add alias</button></div>
+          <div id="aliasEditor" class="editor-list"></div>
+          <div class="notice">Aliases are deliberately local. For portable proof-of-ownership records use <code>knotroute alias export</code> and <code>knotroute alias import</code>.</div>
+        </section>
+      </div>
+
+      <div class="tab-page" data-page="settings">
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">LOCAL ACCESS</span><h2>Gateways</h2><p>No TUN is created. This can coexist with a separate VPN/TUN application.</p></div></div>
+          <div class="form-grid two">
+            <label><span>SOCKS5 listener</span><input id="proxySocks" placeholder="127.0.0.1:9477" /></label>
+            <label><span>HTTP proxy listener</span><input id="proxyHttp" placeholder="127.0.0.1:9478" /></label>
+            <label><span>Default HTTP service</span><input id="defaultHttp" placeholder="http" /></label>
+            <label><span>Default HTTPS service</span><input id="defaultHttps" placeholder="https" /></label>
+          </div>
+          <label class="switch-row"><input type="checkbox" id="proxyDirect" /><span><strong>Allow direct fallback</strong><small>Non-.knot hosts are connected through the operating system normally.</small></span></label>
+        </section>
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">CONTROL PLANE</span><h2>Dashboard & routing</h2></div></div>
+          <div class="form-grid two">
+            <label><span>Dashboard listener</span><input id="dashboardInput" placeholder="127.0.0.1:8484" /></label>
+            <label><span>Maximum hops</span><input id="maxHops" type="number" min="2" max="64" /></label>
+            <label><span>LSA interval</span><input id="lsaInterval" placeholder="20s" /></label>
+            <label><span>LSA lifetime</span><input id="lsaTtl" placeholder="90s" /></label>
+          </div>
+        </section>
+      </div>
+
+      <section class="savebar panel">
+        <div><strong id="saveState">Configuration loaded</strong><span>Changes are validated and applied by restarting the node in-process.</span></div>
+        <button class="button primary" id="saveConfig">Save & restart</button>
       </section>
     </main>
   </div>
+  <template id="rowTemplate"><div class="editor-row"></div></template>
   <script src="/app.js" defer></script>
 </body>
 </html>

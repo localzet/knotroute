@@ -1,42 +1,185 @@
 # KnotRoute
 
-**A self-hosted, encrypted, multi-hop overlay network for publishing private TCP services.**
+**A self-hosted encrypted overlay network with self-authenticating `.knot` names, multi-hop routing, native Windows control, and no central coordinator.**
 
-KnotRoute turns a group of machines into a routed service network. A service can live on a laptop, home server, VPS, NAS, or development machine; another node reaches it through one or more KnotRoute peers using a stable cryptographic node ID. Intermediate relays forward encrypted packets but cannot read the service payload.
+KnotRoute publishes private TCP services from laptops, home servers, VPS nodes, NAS devices, and development machines. A client reaches a service through one or more KnotRoute relays while the service payload remains end-to-end encrypted between the two endpoint nodes.
 
-It is deliberately narrower than a VPN and more deployable than an anonymity network:
+```text
+browser → HTTP proxy → A → relay B → C → 127.0.0.1:8080
+                         encrypted overlay
+```
 
-- no virtual network adapter or administrator privileges;
-- no central controller, account system, PKI, or hosted rendezvous service;
+A service can be opened through a stable name:
+
+```text
+http://wiki.aebagbafaydqqcik...m3q.knot/
+ssh.aebagbafaydqqcik...m3q.knot
+```
+
+Or through a local address-book alias:
+
+```text
+http://wiki.localzet.knot/
+```
+
+KnotRoute is narrower than a VPN and intentionally easier to deploy than an anonymity network:
+
+- no TUN/TAP adapter in the default mode;
+- no administrator privileges for normal desktop use;
+- no central controller, account, hosted rendezvous service, CA, or global name registry;
 - no exit nodes into the public Internet;
-- no dependency on DNS for identity;
-- one static native binary with an embedded dashboard;
-- the complete data plane builds with the Go standard library only.
+- TLS 1.3 on direct links and separate endpoint-to-endpoint stream encryption;
+- native Windows tray controller plus an embedded management dashboard;
+- SOCKS5 and HTTP/CONNECT gateways for `.knot` names;
+- static Go binaries with no runtime dependency.
 
-> KnotRoute is a private-service overlay, not a claim of I2P/Tor-grade anonymity. Relays can observe node IDs, timing, packet sizes, and service-opening metadata. See [Threat model](#threat-model).
+> KnotRoute is a private-service overlay, not a claim of Tor/I2P-grade anonymity. Relays can observe endpoint IDs, timing, packet sizes, route position, and the requested service name. See [Threat model](#threat-model).
 
-## What it does
+## Windows: one-click desktop use
 
-1. Every node creates an Ed25519 identity. Its address is `kr_` plus the SHA-256 hash of its public key.
-2. Direct peers authenticate each other with self-signed Ed25519 certificates over TLS 1.3.
-3. Nodes flood signed link-state advertisements. A route only uses an edge when **both endpoints advertise it**, so one node cannot invent a usable link on its own.
-4. The overlay computes shortest multi-hop paths and relays binary packets with hop limits and duplicate suppression.
-5. A stream endpoint performs an independent X25519 handshake, derives directional keys with HKDF-SHA-256, and encrypts data with AES-256-GCM. Relays see ciphertext.
-6. A node publishes named local TCP services; another node creates a local TCP forward to any reachable service.
+Download the Windows archive, extract it, and run:
 
-Typical uses:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Install-KnotRoute.ps1
+```
 
-- reach SSH, PostgreSQL, Redis, Home Assistant, a dev server, or an internal HTTP service without exposing it publicly;
-- bridge machines that cannot all connect directly, using one or more ordinary nodes as relays;
-- create a small private service fabric across home, office, VPS, and travel devices;
-- give temporary collaborators access to one named service rather than an entire subnet;
-- run reproducible multi-hop networking experiments without a central control plane.
+The installer copies the binaries into the current user's application directory, creates shortcuts, and launches `knotroute-desktop.exe`.
 
-## Quick start
+The tray controller provides:
 
-### 1. Build
+- **Start node**, **Stop node**, and **Restart node**;
+- **Open dashboard**;
+- **Copy `.knot` address**;
+- **Enable `.knot` system integration**;
+- **Start with Windows**;
+- access to the configuration and log directory.
 
-Go 1.23 or newer is sufficient. The embedded dashboard is already compiled, so Node.js is not required for a normal build.
+On first launch it creates the identity and configuration under:
+
+```text
+%LOCALAPPDATA%\KnotRoute
+```
+
+The node itself runs as a hidden process and continues running if the tray controller is closed. An optional true Windows Service wrapper is included under `service/` for machine-wide unattended deployments.
+
+Detailed Windows instructions: [`docs/windows.md`](docs/windows.md).
+
+## Coexistence with Clash, FlClashX, VPNs, and other TUN software
+
+KnotRoute does not create a TUN interface by default. Its Windows integration installs a PAC URL that sends only `*.knot` web traffic to the local KnotRoute HTTP proxy and returns `DIRECT` for every other hostname.
+
+Therefore, when another application owns a TUN interface, ordinary traffic still follows the operating system route table and remains under that application's control. KnotRoute handles only `.knot` destinations at the application-proxy layer.
+
+Existing Windows proxy-script settings are saved before KnotRoute integration is enabled and restored when it is disabled.
+
+## `.knot` addressing
+
+Each node owns an Ed25519 key pair. Its internal node ID is the SHA-256 digest of the public key.
+
+A canonical `.knot` label contains:
+
+```text
+version || 32-byte node ID || 2-byte checksum
+```
+
+The result is encoded with lowercase Base32 without padding and fits in one DNS label:
+
+```text
+<56-character-label>.knot
+```
+
+Service names are placed before the node address:
+
+```text
+<service>.<node-address>.knot
+```
+
+Examples:
+
+```text
+http.<node>.knot
+https.<node>.knot
+ssh.<node>.knot
+postgres.<node>.knot
+```
+
+A bare node address uses the configured default service (`http` for ordinary HTTP and `https` for CONNECT/TLS by default).
+
+The checksum catches typing errors. During routing and endpoint handshakes, the node proves possession of the Ed25519 private key whose public-key hash matches the embedded node ID.
+
+Print addresses from the CLI:
+
+```bash
+knotroute address --config knotroute.json
+knotroute address --config knotroute.json --service ssh
+knotroute resolve --config knotroute.json ssh.example.knot
+```
+
+### Local aliases and signed alias records
+
+Pretty names are local because KnotRoute has no global registrar and does not pretend that first-claim naming is Sybil-resistant.
+
+```json
+"aliases": [
+  {
+    "name": "localzet",
+    "node": "kr_...",
+    "description": "Localzet home node"
+  }
+]
+```
+
+This enables names such as:
+
+```text
+git.localzet.knot
+wiki.localzet.knot
+```
+
+A node can export a signed proof that it consents to an alias:
+
+```bash
+knotroute alias export \
+  --config knotroute.json \
+  --name localzet \
+  --description "Localzet node" \
+  --out localzet.knot-alias.json
+```
+
+Import and verify it on another node:
+
+```bash
+knotroute alias import \
+  --config knotroute.json \
+  --file localzet.knot-alias.json
+```
+
+The signature proves ownership of the target node identity. It does not establish global uniqueness of the human-readable name.
+
+## Local gateways
+
+Defaults:
+
+```text
+SOCKS5       127.0.0.1:9477
+HTTP proxy   127.0.0.1:9478
+Dashboard    127.0.0.1:8484
+PAC script   http://127.0.0.1:8484/proxy.pac
+```
+
+SOCKS5 supports CONNECT with domain-name destinations. Applications must send the hostname to the proxy rather than resolving it locally.
+
+The HTTP gateway supports:
+
+- ordinary HTTP proxy requests;
+- HTTPS and arbitrary TCP tunnelling with `CONNECT`;
+- direct fallback for non-`.knot` hosts when enabled.
+
+KnotRoute does not intercept or terminate TLS. For HTTPS services, the destination application still needs a certificate accepted by the client for the `.knot` hostname, or the client will report its normal certificate error.
+
+## Linux/macOS CLI quick start
+
+Go 1.23 or newer is sufficient to build from source:
 
 ```bash
 git clone https://github.com/localzet/knotroute.git
@@ -45,55 +188,35 @@ go test -race ./...
 CGO_ENABLED=0 go build -trimpath -o knotroute ./cmd/knotroute
 ```
 
-On Windows PowerShell:
-
-```powershell
-go test -race ./...
-$env:CGO_ENABLED = "0"
-go build -trimpath -o knotroute.exe ./cmd/knotroute
-```
-
-### 2. Initialize each node
+Initialize a node:
 
 ```bash
 ./knotroute init --config knotroute.json
+./knotroute doctor --config knotroute.json
+./knotroute run --config knotroute.json
 ```
 
-This writes:
+This creates:
 
-- `knotroute.json` — non-secret configuration;
-- `identity.json` — the node's Ed25519 private key; keep it private and back it up.
+- `knotroute.json` — node configuration;
+- `identity.json` — the Ed25519 private identity. Keep it private and back it up.
 
-Print a node ID at any time:
+## Connect three nodes
 
-```bash
-./knotroute id --config knotroute.json
-```
-
-### 3. Connect nodes
-
-Assume node **B** is reachable at `relay.example.net:7447`. Add it to node A and node C:
-
-```json
-"peers": [
-  { "address": "relay.example.net:7447" }
-]
-```
-
-For identity pinning, add B's ID:
+Assume relay B is reachable at `relay.example.net:7447`. Add B as a seed on A and C:
 
 ```json
 "peers": [
   {
     "address": "relay.example.net:7447",
-    "expected_id": "kr_..."
+    "expected_id": "kr_optional_identity_pin"
   }
 ]
 ```
 
-Open TCP port `7447` on B. A and C only need outbound access to B. Once both links are up, A can route to C through B.
+Open TCP port `7447` on B. A and C may remain outbound-only. Once both direct links are established, A computes a route to C through B.
 
-### 4. Publish a service on C
+Publish SSH on C:
 
 ```json
 "services": [
@@ -106,9 +229,7 @@ Open TCP port `7447` on B. A and C only need outbound access to B. Once both lin
 ]
 ```
 
-An omitted or empty `allow` list permits every node in the overlay. Use explicit IDs for sensitive services.
-
-### 5. Create a local forward on A
+Create a conventional local forward on A:
 
 ```json
 "forwards": [
@@ -120,20 +241,13 @@ An omitted or empty `allow` list permits every node in the overlay. Use explicit
 ]
 ```
 
-Start the nodes:
-
-```bash
-./knotroute doctor --config knotroute.json
-./knotroute run --config knotroute.json
-```
-
-Then on A:
+Then:
 
 ```bash
 ssh -p 2222 localhost
 ```
 
-The TCP stream travels A → B → C. B forwards it but does not possess the end-to-end stream keys.
+Or configure an SSH client that supports SOCKS/proxy commands and use the `.knot` service name directly.
 
 ## Configuration
 
@@ -150,19 +264,26 @@ The TCP stream travels A → B → C. B forwards it but does not possess the end
   ],
   "services": [
     {
-      "name": "web",
+      "name": "http",
       "target": "127.0.0.1:8080",
-      "description": "internal dashboard",
+      "description": "internal web service",
       "allow": ["kr_allowed_node_id"]
     }
   ],
-  "forwards": [
+  "forwards": [],
+  "aliases": [
     {
-      "listen": "127.0.0.1:18080",
-      "node": "kr_remote_node_id",
-      "service": "web"
+      "name": "example",
+      "node": "kr_remote_node_id"
     }
   ],
+  "proxy": {
+    "socks": "127.0.0.1:9477",
+    "http": "127.0.0.1:9478",
+    "direct": true,
+    "default_http_service": "http",
+    "default_https_service": "https"
+  },
   "dashboard": "127.0.0.1:8484",
   "routing": {
     "lsa_interval": "20s",
@@ -172,123 +293,112 @@ The TCP stream travels A → B → C. B forwards it but does not possess the end
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `identity_file` | Ed25519 identity path, resolved relative to the config file. |
-| `listen` | Direct-peer TCP listeners. Port `0` is useful in tests. |
-| `advertise` | Addresses placed in node metadata. If omitted, bound addresses are advertised. |
-| `peers` | Persistent outbound seed connections with exponential reconnect. |
-| `expected_id` | Optional self-certifying identity pin for a seed. |
-| `services` | Named local TCP targets published into the overlay. |
-| `allow` | Source node IDs allowed to open a service; `"*"` permits all. |
-| `forwards` | Local TCP listeners connected to a remote named service. |
-| `dashboard` | Read-only local dashboard and status API; empty disables it. |
-| `lsa_interval` | Signed topology refresh interval. |
-| `lsa_ttl` | Advertisement lifetime; must be at least twice the interval. |
-| `max_hops` | Packet TTL, from 2 to 64. |
+The dashboard edits and validates this configuration. Saving triggers an in-process node restart; the tray process does not need to be restarted.
 
-## Dashboard and API
+## Dashboard and local management API
 
-The default dashboard is `http://127.0.0.1:8484`. It shows:
+The dashboard shows and manages:
 
-- direct peers and connection direction;
-- all computed routes and complete paths;
-- services announced by reachable nodes;
-- local services and forwards;
-- active streams and traffic counters;
-- a bounded runtime event log.
+- canonical `.knot` identity;
+- direct peers and computed multi-hop routes;
+- published services and source-node ACLs;
+- static local forwards;
+- local aliases;
+- SOCKS5, HTTP, PAC, and routing settings;
+- active streams, traffic counters, and runtime events.
 
-Read-only endpoints:
+Endpoints:
 
 ```text
-GET /api/health
-GET /api/status
+GET  /api/health
+GET  /api/status
+GET  /api/config
+PUT  /api/config
+POST /api/reload
+POST /api/shutdown
+GET  /proxy.pac
 ```
 
-The dashboard binds to loopback by default. Do not expose it publicly without a reverse proxy and authentication.
-
-## Commands
-
-```text
-knotroute init   [--config knotroute.json] [--force]
-knotroute run    [--config knotroute.json]
-knotroute id     [--config knotroute.json]
-knotroute doctor [--config knotroute.json] [--probe]
-knotroute version
-```
-
-`doctor` validates the configuration and identity, verifies listener availability, and optionally probes configured service targets.
+Configuration and control endpoints accept only loopback clients and reject cross-origin browser requests. Keep the dashboard bound to loopback unless it is protected by an authenticated reverse proxy.
 
 ## Protocol and cryptography
 
-The wire design is documented in [`docs/protocol.md`](docs/protocol.md).
+The implemented wire protocol is documented in [`docs/protocol.md`](docs/protocol.md).
 
 At a glance:
 
-- direct link: TLS 1.3 with Ed25519 certificates;
+- direct links: mutually authenticated TLS 1.3 with self-signed Ed25519 certificates;
 - node identity: `SHA-256(Ed25519 public key)`;
-- topology: signed, expiring link-state advertisements;
+- routing: signed expiring link-state advertisements;
 - graph safety: only mutually advertised edges are routable;
-- endpoint handshake: ephemeral X25519 plus Ed25519 signatures;
-- key schedule: HKDF-SHA-256, separate client→service and service→client keys;
-- payload: AES-256-GCM with stream ID, endpoints, and sequence number as associated data;
-- relay controls: TTL and packet-ID duplicate cache;
-- transport payload: length-prefixed binary frames; JSON is limited to infrequent control messages.
+- stream handshake: ephemeral X25519 authenticated by endpoint Ed25519 signatures;
+- key schedule: HKDF-SHA-256 with independent directional keys;
+- payload protection: AES-256-GCM;
+- relay controls: packet TTL and duplicate suppression;
+- naming: versioned checksummed Base32 `.knot` labels embedding the node ID.
 
-No custom encryption algorithm is invented. The small local HKDF routine is a direct RFC 5869 extract-and-expand implementation used to avoid a runtime dependency.
+No custom encryption primitive is introduced.
 
 ## Threat model
 
 KnotRoute protects against:
 
 - passive observers between directly connected peers;
-- an intermediate KnotRoute relay reading or modifying service payloads;
+- an intermediate relay reading or modifying service payloads;
 - node-ID impersonation without the corresponding Ed25519 private key;
-- tampering with or replaying older link-state advertisements;
-- a node creating a routable graph edge unless the other endpoint also advertises that edge;
-- ciphertext modification and stream packet reordering.
+- forged or expired topology advertisements;
+- creation of a routable graph edge unless both endpoints advertise it;
+- stream ciphertext modification, endpoint rewriting, duplication, and reordering.
 
-KnotRoute does **not** currently hide:
+KnotRoute does not currently hide:
 
 - source and destination node IDs from relays on the selected path;
-- service name in the stream-open control packet;
-- timing, volume, and packet-size patterns;
-- a malicious destination service reading application data;
-- endpoint compromise or theft of `identity.json`;
-- global traffic analysis, Sybil attacks, censorship, or denial of service;
-- the IP addresses of directly connected peers.
+- the service name in the stream-open packet;
+- timing, traffic volume, and packet-size patterns;
+- the IP addresses of directly connected peers;
+- endpoint compromise;
+- global traffic analysis, Sybil attacks, censorship, or denial of service.
 
-It is therefore suitable for private service routing and experimentation, not for users whose safety depends on strong anonymity against a global adversary.
+It is suitable for private service routing, self-hosting, and networking experiments. It is not suitable where personal safety depends on strong anonymity against a global adversary.
 
-## Operational notes
+## Commands
 
-- A node behind NAT can operate outbound-only by keeping `listen` on loopback or firewalling it and configuring one or more reachable seeds.
-- Relays require only the KnotRoute listener; they do not require any published service.
-- Multiple configured seeds improve availability. Routes update when links or signed LSAs change.
-- Identity loss changes the node ID. Back up `identity.json` securely.
-- Use application-layer authentication too. KnotRoute protects transport; it does not replace SSH keys, database credentials, or HTTP authentication.
+```text
+knotroute init     [--config knotroute.json] [--force]
+knotroute run      [--config knotroute.json]
+knotroute id       [--config knotroute.json]
+knotroute address  [--config knotroute.json] [--service name]
+knotroute resolve  [--config knotroute.json] <name.knot>
+knotroute alias export --config knotroute.json --name name [--out record.json]
+knotroute alias import --config knotroute.json --file record.json
+knotroute doctor   [--config knotroute.json] [--probe]
+knotroute version
+```
 
-## Native distribution
+## Tests
 
-`make release` creates static archives for:
+```bash
+go test ./...
+go test -race ./...
+go vet ./...
+```
+
+Integration tests create three real nodes and verify:
+
+- a two-hop A → B → C route;
+- endpoint-authenticated encrypted byte streams;
+- HTTP access through a canonical `.knot` name and relay;
+- SOCKS5 access through `service.<node>.knot` and relay.
+
+## Release targets
+
+`make release` produces archives for:
 
 - Linux amd64/arm64;
 - Windows amd64/arm64;
 - macOS amd64/arm64.
 
-The process is defined in `scripts/build-release.sh` and `scripts/build-release.ps1`. A systemd unit, Windows service installer, Dockerfile, and Compose example are included under `packaging/`.
-
-## Development
-
-```bash
-make test       # unit + integration tests
-make race       # race detector, including A -> B -> C stream test
-make vet
-make build
-make ui         # rebuild embedded TypeScript dashboard
-```
-
-The integration test creates three real nodes, waits for a two-hop route, performs the endpoint key exchange, and sends a byte stream through the relay.
+Windows archives include the daemon, tray controller, Service wrapper, current-user installer, service scripts, and documentation.
 
 ## License
 

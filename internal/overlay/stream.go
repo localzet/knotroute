@@ -349,7 +349,7 @@ func (n *Node) handleOpen(packet protocol.Packet) {
 	s.startReceiver()
 	ack := protocol.SignOpenAck(n.id, packet.StreamID, packet.Src, eph.public, ackNonce, time.Now())
 	payload, _ := json.Marshal(ack)
-	if err := n.sendPacket(n.newPacket(protocol.PacketOpenAck, packet.Src, packet.StreamID, 0, payload)); err != nil {
+	if err := n.sendPacketWithRetry(n.newPacket(protocol.PacketOpenAck, packet.Src, packet.StreamID, 0, payload), 5*time.Second); err != nil {
 		s.closeLocal(err.Error(), false)
 		return
 	}
@@ -358,7 +358,41 @@ func (n *Node) handleOpen(packet protocol.Packet) {
 
 func (n *Node) sendOpenError(open protocol.Packet, message string) {
 	payload, _ := json.Marshal(protocol.ErrorMessage{Message: message})
-	_ = n.sendPacket(n.newPacket(protocol.PacketError, open.Src, open.StreamID, 0, payload))
+	_ = n.sendPacketWithRetry(n.newPacket(protocol.PacketError, open.Src, open.StreamID, 0, payload), 5*time.Second)
+}
+
+// sendPacketWithRetry covers the small convergence window in which a request
+// has already reached this node but the reverse link-state route has not yet
+// arrived. Data packets remain fail-fast; only stream-control replies use this
+// bounded retry so opening a service does not randomly stall during startup.
+func (n *Node) sendPacketWithRetry(packet protocol.Packet, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		if err := n.sendPacket(packet); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			// A failed write may have reached one relay. A fresh packet ID keeps a
+			// later retry from being mistaken for a replay by that relay.
+			_, _ = rand.Read(packet.PacketID[:])
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return lastErr
+		}
+		delay := 25 * time.Millisecond
+		if remaining < delay {
+			delay = remaining
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-n.ctx.Done():
+			timer.Stop()
+			return errors.New("node stopped")
+		case <-timer.C:
+		}
+	}
 }
 
 func writeAll(w io.Writer, data []byte) error {

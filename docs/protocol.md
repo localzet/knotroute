@@ -147,3 +147,40 @@ A forward accepts local TCP connections and creates one overlay stream per conne
 ## 9. Limits
 
 Protocol v1 does not provide onion routing, route blinding, cover traffic, padding, congestion-aware path selection, multipath streams, UDP, IP tunnelling, NAT traversal, or a distributed peer-discovery directory. These omissions are intentional and are reflected in the public threat model.
+
+## 10. `.knot` naming
+
+KnotRoute protocol version 1 uses a local naming layer above node IDs. The canonical node label is:
+
+```text
+payload  = uint8(address_version=1) || byte[32](node_id)
+checksum = SHA-256("knotroute-address-checksum-v1" || payload)[0:2]
+label    = lowercase_base32_without_padding(payload || checksum)
+domain   = label || ".knot"
+```
+
+The result is 56 characters and fits inside one DNS label. A service address is:
+
+```text
+service || "." || label || ".knot"
+```
+
+The address checksum detects accidental corruption. Cryptographic authenticity is established when the endpoint presents an Ed25519 public key whose SHA-256 digest matches the node ID embedded in the address.
+
+Human-readable aliases are local address-book entries. A portable alias record may be signed by the target node. The signature proves control of that node identity but does not make the alias globally unique.
+
+## 11. Local proxy gateways
+
+SOCKS5 and HTTP/CONNECT are local ingress protocols and are not forwarded as overlay control messages.
+
+For a `.knot` destination, the gateway:
+
+1. parses and verifies the canonical address checksum or resolves a local alias;
+2. selects the explicit service prefix or a context-sensitive default service;
+3. resolves the embedded node ID through the link-state route table;
+4. performs the ordinary authenticated end-to-end OPEN/OPEN_ACK exchange;
+5. bridges the local proxy connection to the encrypted overlay stream.
+
+The HTTP proxy does not terminate TLS. CONNECT payloads are opaque to the local gateway after the tunnel is established.
+
+Non-`.knot` destinations may be connected directly when `proxy.direct` is enabled. This allows a PAC file to route only `.knot` names into KnotRoute without replacing the operating system's normal route selection.

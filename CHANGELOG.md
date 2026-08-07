@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.1
+
+- Added role-based operating guides for end users, service operators, server operators, network operators, and developers.
+- Documented the distinction between network isolation and membership authorization, and between direct-service ACLs and anonymous published-service access control.
+- Include the complete `docs/` directory in platform release archives.
+- Fixed Android CI/release builds to use the stable Android 36 SDK consistently with `targetSdk = 36`.
+
 ## 3.0.0
 
 - Added independent Ed25519 service identities and versioned service `.knot` addresses.

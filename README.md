@@ -26,6 +26,17 @@ The same service identity can be moved to another KnotRoute node by moving its s
 
 > KnotRoute v3 provides onion-style hop encryption and hidden-service-style introduction/rendezvous paths, but it has **not** received the years of public cryptographic review, traffic-analysis research, or operational hardening behind Tor/I2P. Do not market it as providing Tor-equivalent anonymity. See [Security model](#security-model).
 
+## Documentation by role
+
+- [End-user guide](docs/user-guide.md) — install a client, join a network, enable `.knot` browser integration, and troubleshoot access.
+- [Service operator guide](docs/service-operator.md) — publish sites/TCP services, manage stable service identities, migration, and application-layer access control.
+- [Server operator guide](docs/server-operator.md) — relays, Docker sidecars, Traefik coexistence, monitoring, backups, and upgrades.
+- [Network operator guide](docs/network-operator.md) — create an independent network, deploy Beacons/bootstrap relays, distribute invitations, monitor topology, and handle incidents.
+- [SDK guide](docs/sdk.md) — embed client/server KnotRoute into applications.
+- [Documentation index](docs/README.md) — all guides and protocol references.
+
+> `network_id` isolates overlays but is **not** a membership credential or password. Current v3 does not provide network-wide admission/revocation. Published hidden services also require application-layer authentication when access must be restricted.
+
 ## What v3 contains
 
 - Ed25519 node identities and independent Ed25519 **service identities**.
@@ -332,7 +343,7 @@ host, err := knotserver.New(knotserver.Options{
 The release workflow produces:
 
 ```text
-knotroute-client_3.0.0_android.aar
+knotroute-client_3.0.1_android.aar
 ```
 
 An Android application can construct the embedded client, call `Start()`, and use `OpenForward()` to obtain a loopback TCP port connected to a `.knot` service. The standalone KnotRoute Android app is therefore optional for applications that embed the AAR.
@@ -438,13 +449,13 @@ Back up the service identity file if the `.knot` address must survive host migra
 ### Linux/macOS
 
 ```bash
-VERSION=3.0.0 ./scripts/build-release.sh
+VERSION=3.0.1 ./scripts/build-release.sh
 ```
 
 ### Windows PowerShell
 
 ```powershell
-$env:VERSION = "3.0.0"
+$env:VERSION = "3.0.1"
 .\scripts\build-release.ps1
 ```
 
@@ -461,19 +472,19 @@ Pushing a Git tag matching `v*` runs the GitHub release workflow, builds Android
 Build the generic node:
 
 ```bash
-docker build -t knotroute:3.0.0 .
+docker build -t knotroute:3.0.1 .
 ```
 
 Build the application sidecar:
 
 ```bash
-docker build -f Dockerfile.sidecar -t knotroute-sidecar:3.0.0 .
+docker build -f Dockerfile.sidecar -t knotroute-sidecar:3.0.1 .
 ```
 
 Build Beacon/bootstrap relay:
 
 ```bash
-docker build -f Dockerfile.beacon -t knotroute-beacon:3.0.0 .
+docker build -f Dockerfile.beacon -t knotroute-beacon:3.0.1 .
 ```
 
 All runtime images are `scratch`-based static binaries (the sidecar additionally contains CA certificates for outbound HTTPS Beacon access).

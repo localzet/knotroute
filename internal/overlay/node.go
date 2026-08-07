@@ -28,6 +28,7 @@ import (
 	"github.com/localzet/knotroute/internal/protocol"
 	proxyserver "github.com/localzet/knotroute/internal/proxy"
 	"github.com/localzet/knotroute/internal/router"
+	"github.com/localzet/knotroute/internal/serviceid"
 )
 
 var Version = "dev"
@@ -400,6 +401,7 @@ func (n *Node) registerPeer(p *peer) bool {
 		n.peersMu.Unlock()
 	}
 	n.emitLocalLSA()
+	n.wakeDirectoryPublisher()
 	n.sendAllLSAs(p)
 	if n.cfg.Discovery.Enabled && n.cfg.Discovery.PeerExchange {
 		raw, _ := json.Marshal(discovery.Response{Peers: n.pexCandidates()})
@@ -415,6 +417,7 @@ func (n *Node) unregisterPeer(p *peer) {
 	}
 	n.peersMu.Unlock()
 	n.emitLocalLSA()
+	n.wakeDirectoryPublisher()
 }
 
 func (n *Node) peerIDs() []nodeid.ID {
@@ -473,6 +476,7 @@ func (n *Node) handleLSA(raw []byte, source *peer) {
 	n.lsas[id] = lsa
 	n.recomputeRoutesLocked()
 	n.topologyMu.Unlock()
+	n.wakeDirectoryPublisher()
 	n.broadcast(protocol.FrameLSA, raw, source)
 }
 
@@ -546,6 +550,9 @@ func (n *Node) cleanupExpired() {
 		n.recomputeRoutesLocked()
 	}
 	n.topologyMu.Unlock()
+	if changed {
+		n.wakeDirectoryPublisher()
+	}
 	n.seenMu.Lock()
 	for id, seen := range n.seenPackets {
 		if now.Sub(seen) > 2*time.Minute {
@@ -636,7 +643,7 @@ func (n *Node) addEvent(level, message string) {
 }
 
 func (n *Node) Status() Status {
-	status := Status{Name: "KnotRoute", Version: Version, NetworkID: n.network.String(), NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: append([]string{}, n.Addresses()...), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
+	status := Status{Name: "KnotRoute", Version: Version, NetworkID: n.network.String(), NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: append([]string{}, n.Addresses()...), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, KnownServices: []KnownServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
 	status.Proxy = ProxyStatus{SOCKS: n.cfg.Proxy.SOCKS, HTTP: n.cfg.Proxy.HTTP, Direct: n.cfg.Proxy.Direct, Listeners: append([]string{}, n.proxyAddresses...)}
 	for _, address := range n.proxyAddresses {
 		if strings.HasPrefix(address, "socks5://") {
@@ -695,6 +702,25 @@ func (n *Node) Status() Status {
 		}
 		status.Services = append(status.Services, entry)
 	}
+	n.directory.mu.RLock()
+	for _, d := range n.directory.descriptors {
+		metadata := map[string]string{}
+		for key, value := range d.Metadata {
+			metadata[key] = value
+		}
+		status.KnownServices = append(status.KnownServices, KnownServiceStatus{
+			ServiceID: d.ServiceID, Domain: func() string {
+				id, err := serviceid.Parse(d.ServiceID)
+				if err != nil {
+					return ""
+				}
+				return naming.ServiceCanonicalDomain(id)
+			}(), Metadata: metadata,
+			Revision: d.Revision, ExpiresUnix: d.ExpiresUnix, IntroductionPoints: append([]string{}, d.IntroductionPoints...),
+		})
+	}
+	n.directory.mu.RUnlock()
+	sort.Slice(status.KnownServices, func(i, j int) bool { return status.KnownServices[i].Domain < status.KnownServices[j].Domain })
 	for _, a := range n.cfg.Aliases {
 		resolved, err := naming.ResolveHost(a.Name+naming.Suffix, n.cfg.Aliases)
 		if err != nil {

@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +28,7 @@ type publishedService struct {
 	cfg           config.Service
 	identity      *serviceidentity.Identity
 	revision      atomic.Uint64
+	revisionPath  string
 	introMu       sync.Mutex
 	introSessions map[nodeid.ID]*introSession
 	introDialing  map[nodeid.ID]bool
@@ -39,12 +43,14 @@ type directoryState struct {
 	descriptors map[serviceid.ID]directory.Descriptor
 	pending     map[[16]byte]chan descriptorResult
 	local       map[string]*publishedService
+	wake        chan struct{}
 }
 
 func (n *Node) initDirectory() error {
 	n.directory.descriptors = map[serviceid.ID]directory.Descriptor{}
 	n.directory.pending = map[[16]byte]chan descriptorResult{}
 	n.directory.local = map[string]*publishedService{}
+	n.directory.wake = make(chan struct{}, 1)
 	for _, svc := range n.cfg.Services {
 		if !svc.Publish {
 			continue
@@ -63,9 +69,83 @@ func (n *Node) initDirectory() error {
 		if err != nil {
 			return fmt.Errorf("service %s identity: %w", svc.Name, err)
 		}
-		n.directory.local[svc.Name] = &publishedService{cfg: svc, identity: id}
+		pub := &publishedService{cfg: svc, identity: id}
+		if path != "" {
+			pub.revisionPath = path + ".revision"
+			revision, err := loadDescriptorRevision(pub.revisionPath)
+			if err != nil {
+				return fmt.Errorf("service %s descriptor revision: %w", svc.Name, err)
+			}
+			pub.revision.Store(revision)
+		} else {
+			pub.revision.Store(descriptorRevisionEpoch())
+		}
+		n.directory.local[svc.Name] = pub
 	}
 	return nil
+}
+
+func descriptorRevisionEpoch() uint64 {
+	// Legacy builds used a process-local counter starting at zero. Seeding new
+	// revision state from wall-clock milliseconds makes the first descriptor
+	// after upgrading newer than any realistic legacy counter while the
+	// persisted sidecar file keeps revisions monotonic across later restarts.
+	return uint64(time.Now().UTC().UnixMilli()) << 16
+}
+
+func loadDescriptorRevision(path string) (uint64, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return descriptorRevisionEpoch(), nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return value, nil
+}
+
+func saveDescriptorRevision(path string, revision uint64) error {
+	if path == "" {
+		return nil
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil && dir != "." {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".descriptor-revision-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := fmt.Fprintf(tmp, "%d\n", revision); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+func nextDescriptorRevision(s *publishedService) (uint64, error) {
+	revision := s.revision.Add(1)
+	if err := saveDescriptorRevision(s.revisionPath, revision); err != nil {
+		return 0, fmt.Errorf("persist descriptor revision: %w", err)
+	}
+	return revision, nil
 }
 
 func (n *Node) serviceDomains() map[string]string {
@@ -84,6 +164,13 @@ func (n *Node) directoryLoop() {
 	clean := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	defer clean.Stop()
+	var wakeTimer *time.Timer
+	var wakeC <-chan time.Time
+	defer func() {
+		if wakeTimer != nil {
+			wakeTimer.Stop()
+		}
+	}()
 	n.publishAllDescriptors()
 	for {
 		select {
@@ -91,9 +178,34 @@ func (n *Node) directoryLoop() {
 			return
 		case <-ticker.C:
 			n.publishAllDescriptors()
+		case <-n.directory.wake:
+			// Coalesce topology churn into one near-term publication. This is a
+			// leading-edge debounce: frequent LSAs must not postpone publication
+			// forever.
+			if wakeC == nil {
+				if wakeTimer == nil {
+					wakeTimer = time.NewTimer(350 * time.Millisecond)
+				} else {
+					wakeTimer.Reset(350 * time.Millisecond)
+				}
+				wakeC = wakeTimer.C
+			}
+		case <-wakeC:
+			wakeC = nil
+			n.publishAllDescriptors()
 		case <-clean.C:
 			n.cleanDescriptors()
 		}
+	}
+}
+
+func (n *Node) wakeDirectoryPublisher() {
+	if n.directory.wake == nil {
+		return
+	}
+	select {
+	case n.directory.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -117,7 +229,11 @@ func (n *Node) publishDescriptor(s *publishedService) error {
 	if len(intros) == 0 {
 		return errors.New("no active introduction points")
 	}
-	d, err := directory.New(s.identity, n.network, intros, s.revision.Add(1), n.cfg.DescriptorTTL(), s.cfg.Metadata)
+	revision, err := nextDescriptorRevision(s)
+	if err != nil {
+		return err
+	}
+	d, err := directory.New(s.identity, n.network, intros, revision, n.cfg.DescriptorTTL(), s.cfg.Metadata)
 	if err != nil {
 		return err
 	}
@@ -210,12 +326,18 @@ func xorLess(a, b nodeid.ID, target serviceid.ID) bool {
 }
 
 func (n *Node) LookupService(ctx context.Context, id serviceid.ID) (directory.Descriptor, error) {
-	n.directory.mu.RLock()
-	if d, ok := n.directory.descriptors[id]; ok && d.ExpiresUnix > time.Now().Unix() {
+	return n.lookupService(ctx, id, true)
+}
+
+func (n *Node) lookupService(ctx context.Context, id serviceid.ID, useCache bool) (directory.Descriptor, error) {
+	if useCache {
+		n.directory.mu.RLock()
+		if d, ok := n.directory.descriptors[id]; ok && d.ExpiresUnix > time.Now().Unix() {
+			n.directory.mu.RUnlock()
+			return d, nil
+		}
 		n.directory.mu.RUnlock()
-		return d, nil
 	}
-	n.directory.mu.RUnlock()
 	var reqID [16]byte
 	if _, err := rand.Read(reqID[:]); err != nil {
 		return directory.Descriptor{}, err
@@ -241,7 +363,22 @@ func (n *Node) LookupService(ctx context.Context, id serviceid.ID) (directory.De
 	}
 	timeout := time.NewTimer(n.cfg.DescriptorLookupTimeout())
 	defer timeout.Stop()
+	var settle *time.Timer
+	var settleC <-chan time.Time
+	defer func() {
+		if settle != nil {
+			settle.Stop()
+		}
+	}()
 	var best directory.Descriptor
+	received := 0
+	returnBest := func() (directory.Descriptor, error) {
+		if best.ServiceID == "" {
+			return directory.Descriptor{}, errors.New("service descriptor not found")
+		}
+		n.storeDescriptor(best)
+		return best, nil
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -249,21 +386,31 @@ func (n *Node) LookupService(ctx context.Context, id serviceid.ID) (directory.De
 		case <-n.ctx.Done():
 			return directory.Descriptor{}, errors.New("node stopped")
 		case <-timeout.C:
-			if best.ServiceID != "" {
-				n.storeDescriptor(best)
-				return best, nil
-			}
-			return directory.Descriptor{}, errors.New("service descriptor not found")
+			return returnBest()
+		case <-settleC:
+			return returnBest()
 		case r := <-ch:
-			if r.found && (best.ServiceID == "" || r.descriptor.Revision > best.Revision) {
-				best = r.descriptor
-				if _, err := best.Verify(time.Now(), n.network); err == nil {
-					n.storeDescriptor(best)
-					return best, nil
+			received++
+			if r.found {
+				if _, err := r.descriptor.Verify(time.Now(), n.network); err == nil && (best.ServiceID == "" || r.descriptor.Revision > best.Revision) {
+					best = r.descriptor
+					if settle == nil {
+						settle = time.NewTimer(250 * time.Millisecond)
+						settleC = settle.C
+					}
 				}
+			}
+			if received >= sent {
+				return returnBest()
 			}
 		}
 	}
+}
+
+func (n *Node) invalidateServiceDescriptor(id serviceid.ID) {
+	n.directory.mu.Lock()
+	delete(n.directory.descriptors, id)
+	n.directory.mu.Unlock()
 }
 
 func (n *Node) handleDirectoryPacket(packet protocol.Packet) bool {

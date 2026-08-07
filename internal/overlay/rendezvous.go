@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/localzet/knotroute/internal/directory"
 	"github.com/localzet/knotroute/internal/nodeid"
 	"github.com/localzet/knotroute/internal/serviceid"
 )
@@ -334,21 +335,33 @@ func (n *Node) maintainIntro(s *publishedService, dst nodeid.ID) {
 		if err == nil {
 			if err = writeControl(conn, n.makeIntroRegistration(s, dst)); err == nil {
 				var ack simpleAck
-				if err = readControl(conn, &ack); err == nil && ack.OK {
+				if err = readControl(conn, &ack); err == nil && !ack.OK {
+					err = errors.New(ack.Error)
+				}
+				if err == nil && ack.OK {
 					sess := &introSession{node: dst, conn: conn, done: make(chan struct{})}
 					s.introMu.Lock()
 					s.introSessions[dst] = sess
 					s.introMu.Unlock()
 					n.addEvent("info", "service "+s.cfg.Name+" introduced at "+dst.Short())
+					n.wakeDirectoryPublisher()
 					n.readIntroductions(s, conn)
 					s.introMu.Lock()
+					removed := false
 					if s.introSessions[dst] == sess {
 						delete(s.introSessions, dst)
+						removed = true
 					}
 					s.introMu.Unlock()
+					if removed {
+						n.wakeDirectoryPublisher()
+					}
 				}
 			}
 			_ = conn.Close()
+		}
+		if err != nil && n.ctx.Err() == nil {
+			n.addEvent("warn", "introduction "+s.cfg.Name+" via "+dst.Short()+": "+err.Error())
 		}
 		timer := time.NewTimer(backoff)
 		select {
@@ -463,10 +476,30 @@ func (n *Node) OpenService(ctx context.Context, id serviceid.ID) (net.Conn, erro
 	if service, ok := n.localPublishedService(id); ok {
 		return n.dialLocalService(ctx, service)
 	}
-	d, err := n.LookupService(ctx, id)
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		d, err := n.lookupService(ctx, id, attempt == 0)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		conn, err := n.openServiceDescriptor(ctx, id, d)
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+		n.invalidateServiceDescriptor(id)
+		if attempt == 0 {
+			n.addEvent("warn", "service "+id.Short()+" descriptor failed; refreshing: "+err.Error())
+		}
 	}
+	if lastErr == nil {
+		lastErr = errors.New("service open failed")
+	}
+	return nil, lastErr
+}
+
+func (n *Node) openServiceDescriptor(ctx context.Context, id serviceid.ID, d directory.Descriptor) (net.Conn, error) {
 	intros := make([]nodeid.ID, 0, len(d.IntroductionPoints))
 	for _, raw := range d.IntroductionPoints {
 		nid, e := nodeid.Parse(raw)
@@ -555,6 +588,7 @@ func (n *Node) OpenService(ctx context.Context, id serviceid.ID) (net.Conn, erro
 	n.addEvent("info", "opened rendezvous service "+id.Short()+" via "+rv.Short())
 	return newRendezvousConn(rvConn, id, cookie, c2s, s2c), nil
 }
+
 func (n *Node) chooseRendezvous(exclude []nodeid.ID) (nodeid.ID, error) {
 	skip := map[nodeid.ID]bool{}
 	for _, x := range exclude {

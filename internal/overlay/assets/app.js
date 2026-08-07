@@ -26,6 +26,7 @@ function normalizeStatus(value) {
         peers: asArray(raw.peers).map(p => ({ ...asObject(p), advertise: asArray(asObject(p).advertise) })),
         routes: asArray(raw.routes).map(r => ({ ...asObject(r), path: asArray(asObject(r).path), services: asArray(asObject(r).services) })),
         services: asArray(raw.services).map(service => ({ ...asObject(service), introduction_points: asArray(asObject(service).introduction_points) })),
+        known_services: asArray(raw.known_services).map(service => ({ ...asObject(service), introduction_points: asArray(asObject(service).introduction_points), metadata: asObject(asObject(service).metadata) })),
         forwards: asArray(raw.forwards),
         aliases: asArray(raw.aliases),
         events: asArray(raw.events),
@@ -39,6 +40,9 @@ function setSaveState(message, state = "") {
     byId("saveState").textContent = message;
 }
 function markDirty() { dirty = true; setSaveState("Есть несохранённые изменения"); }
+function nodeServiceDomain(service, nodeDomain) {
+    return `${service}.${nodeDomain}`;
+}
 function renderRoutes(items) {
     const root = byId("routes");
     if (!items.length) {
@@ -47,7 +51,43 @@ function renderRoutes(items) {
         return;
     }
     root.className = "table-wrap";
-    root.innerHTML = `<table><thead><tr><th>Назначение</th><th>Путь</th><th>Хопы</th><th>Сервисы</th></tr></thead><tbody>${items.map(r => `<tr><td><code title="${esc(r.destination)}">${esc(r.domain)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length ? r.services.map((x) => `<span class="service-pill">${esc(x)}</span>`).join("") : "—"}</td></tr>`).join("")}</tbody></table>`;
+    root.innerHTML = `<table><thead><tr><th>Узел</th><th>Путь</th><th>Хопы</th><th>Объявленные сервисы</th></tr></thead><tbody>${items.map(r => `<tr><td><code title="${esc(r.destination)}">${esc(r.domain)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length ? r.services.map((x) => { const domain = nodeServiceDomain(x, r.domain); return `<a class="service-pill route-service-link" href="http://${esc(domain)}/" target="_blank" rel="noreferrer" title="Открыть ${esc(domain)}">${esc(x)}</a>`; }).join("") : "—"}</td></tr>`).join("")}</tbody></table>`;
+}
+function catalogEntries(s) {
+    const entries = [];
+    const seen = new Set();
+    for (const route of s.routes) {
+        for (const service of route.services) {
+            const domain = nodeServiceDomain(service, route.domain);
+            if (seen.has(domain)) continue;
+            seen.add(domain);
+            entries.push({ kind: "node", domain, title: service, description: `Сервис узла ${route.short_id || short(route.destination)} · ${route.hops} hop`, tags: ["node-service"], href: `http://${domain}/` });
+        }
+    }
+    for (const item of s.known_services) {
+        if (!item.domain || seen.has(item.domain)) continue;
+        seen.add(item.domain);
+        const metadata = asObject(item.metadata);
+        const tags = String(metadata.tags || "").split(",").map(x => x.trim()).filter(Boolean);
+        const scheme = String(metadata.scheme || "http").toLowerCase() === "https" ? "https" : "http";
+        entries.push({ kind: "identity", domain: item.domain, title: metadata.title || metadata.name || item.domain, description: metadata.description || `Переносимая service identity · revision ${item.revision ?? "?"} · intro: ${item.introduction_points.length}`, tags, href: `${scheme}://${item.domain}/` });
+    }
+    return entries;
+}
+function renderCatalog(s) {
+    const root = byId("catalog");
+    const query = (byId("catalogSearch").value || "").trim().toLowerCase();
+    const all = catalogEntries(s);
+    const filtered = !query ? all : all.filter(x => [x.title, x.domain, x.description, ...x.tags].join(" ").toLowerCase().includes(query));
+    byId("catalogCount").textContent = `${filtered.length} из ${all.length}`;
+    if (!filtered.length) {
+        root.className = "catalog-grid empty";
+        root.textContent = all.length ? "Ничего не найдено" : "Сервисы пока не обнаружены";
+        return;
+    }
+    root.className = "catalog-grid";
+    root.innerHTML = filtered.map(x => `<article class="catalog-card"><div class="catalog-head"><strong>${esc(x.title)}</strong><span class="catalog-kind ${x.kind === "identity" ? "identity" : ""}">${x.kind === "identity" ? "service identity" : "узел"}</span></div><code>${esc(x.domain)}</code><p>${esc(x.description)}</p>${x.tags.length ? `<div class="catalog-meta">${x.tags.map(tag => `<span class="service-pill">${esc(tag)}</span>`).join("")}</div>` : ""}<div class="catalog-actions"><a class="button" href="${esc(x.href)}" target="_blank" rel="noreferrer">Открыть</a><button class="button ghost catalog-copy" type="button" data-domain="${esc(x.domain)}">Копировать адрес</button></div></article>`).join("");
+    for (const button of root.querySelectorAll(".catalog-copy")) button.addEventListener("click", async () => { await navigator.clipboard.writeText(button.dataset.domain || ""); const old = button.textContent; button.textContent = "Скопировано"; setTimeout(() => button.textContent = old, 1000); });
 }
 function renderPeers(items) {
     const root = byId("peers");
@@ -103,6 +143,7 @@ function renderStatus(s) {
     renderRoutes(s.routes);
     renderPeers(s.peers);
     renderEndpoints(s.services, s.forwards);
+    renderCatalog(s);
     renderEvents(s.events);
     const health = document.querySelector(".health");
     if (health) {
@@ -322,6 +363,7 @@ byId("addPeer").addEventListener("click", () => makeRow(byId("peerEditor"), [{ k
 byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Имя", placeholder: "web", cls: "narrow" }, { key: "target", label: "Локальная цель", placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Опубликовать identity", type: "checkbox", checked: true, cls: "narrow" }, { key: "intros", label: "Точек входа", type: "number", value: "3", cls: "narrow", advanced: true }, { key: "description", label: "Описание", advanced: true }, { key: "allow", label: "ACL узлов (прямой режим)", placeholder: "*", cls: "wide", advanced: true }]));
 byId("addForward").addEventListener("click", () => makeRow(byId("forwardEditor"), [{ key: "listen", label: "Локальный listener", placeholder: "127.0.0.1:2222" }, { key: "node", label: "ID удалённого узла", placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Сервис", placeholder: "ssh", cls: "narrow" }]));
 byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Алиас", placeholder: "server", cls: "narrow" }, { key: "node", label: "Целевой узел", placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Целевой сервис", placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Описание", advanced: true }]));
+byId("catalogSearch").addEventListener("input", () => { if (lastStatus) renderCatalog(lastStatus); });
 byId("saveConfig").addEventListener("click", () => void saveConfig());
 byId("restartNode").addEventListener("click", async () => { await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Перезапуск запрошен", "success"); });
 byId("stopNode").addEventListener("click", async () => { if (!confirm("Остановить узел KnotRoute? Его можно снова запустить из приложения в трее."))

@@ -371,8 +371,12 @@ func (n *Node) openCircuitTarget(rc *relayCircuit, body []byte) {
 		conn = internal
 	} else {
 		svc, ok := n.service(name)
-		if !ok || !n.allowedAnonymous(svc) {
-			_ = n.sendRelayReverse(rc, protocol.RelayOpenError, []byte("service unavailable for anonymous circuit"))
+		if !ok {
+			_ = n.sendRelayReverse(rc, protocol.RelayOpenError, []byte(fmt.Sprintf("service %q is not available on destination; use an advertised node service (<service>.<node>.knot) or a published service identity", name)))
+			return
+		}
+		if !n.allowedAnonymous(svc) {
+			_ = n.sendRelayReverse(rc, protocol.RelayOpenError, []byte(fmt.Sprintf("service %q does not allow anonymous circuits", name)))
 			return
 		}
 		c, err := n.dialServiceTarget(n.ctx, svc.Target)

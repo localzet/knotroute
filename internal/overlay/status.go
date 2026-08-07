@@ -30,6 +30,15 @@ type ServiceStatus struct {
 	Introduction []string `json:"introduction_points,omitempty"`
 }
 
+type KnownServiceStatus struct {
+	ServiceID          string            `json:"service_id"`
+	Domain             string            `json:"domain"`
+	Metadata           map[string]string `json:"metadata"`
+	Revision           uint64            `json:"revision"`
+	ExpiresUnix        int64             `json:"expires_unix"`
+	IntroductionPoints []string          `json:"introduction_points"`
+}
+
 type ForwardStatus struct {
 	Listen  string `json:"listen"`
 	Node    string `json:"node"`
@@ -45,28 +54,29 @@ type Event struct {
 }
 
 type Status struct {
-	Name           string          `json:"name"`
-	Version        string          `json:"version"`
-	NetworkID      string          `json:"network_id"`
-	NodeID         string          `json:"node_id"`
-	Domain         string          `json:"domain"`
-	ShortID        string          `json:"short_id"`
-	StartedAt      time.Time       `json:"started_at"`
-	Listen         []string        `json:"listen"`
-	Peers          []PeerStatus    `json:"peers"`
-	Routes         []RouteStatus   `json:"routes"`
-	Services       []ServiceStatus `json:"services"`
-	Forwards       []ForwardStatus `json:"forwards"`
-	Aliases        []AliasStatus   `json:"aliases"`
-	Proxy          ProxyStatus     `json:"proxy"`
-	ActiveStreams  int             `json:"active_streams"`
-	ActiveCircuits int             `json:"active_circuits"`
-	Descriptors    int             `json:"descriptors"`
-	BytesSent      uint64          `json:"bytes_sent"`
-	BytesReceived  uint64          `json:"bytes_received"`
-	FramesSent     uint64          `json:"frames_sent"`
-	FramesReceived uint64          `json:"frames_received"`
-	Events         []Event         `json:"events"`
+	Name           string               `json:"name"`
+	Version        string               `json:"version"`
+	NetworkID      string               `json:"network_id"`
+	NodeID         string               `json:"node_id"`
+	Domain         string               `json:"domain"`
+	ShortID        string               `json:"short_id"`
+	StartedAt      time.Time            `json:"started_at"`
+	Listen         []string             `json:"listen"`
+	Peers          []PeerStatus         `json:"peers"`
+	Routes         []RouteStatus        `json:"routes"`
+	Services       []ServiceStatus      `json:"services"`
+	KnownServices  []KnownServiceStatus `json:"known_services"`
+	Forwards       []ForwardStatus      `json:"forwards"`
+	Aliases        []AliasStatus        `json:"aliases"`
+	Proxy          ProxyStatus          `json:"proxy"`
+	ActiveStreams  int                  `json:"active_streams"`
+	ActiveCircuits int                  `json:"active_circuits"`
+	Descriptors    int                  `json:"descriptors"`
+	BytesSent      uint64               `json:"bytes_sent"`
+	BytesReceived  uint64               `json:"bytes_received"`
+	FramesSent     uint64               `json:"frames_sent"`
+	FramesReceived uint64               `json:"frames_received"`
+	Events         []Event              `json:"events"`
 }
 
 type AliasStatus struct {

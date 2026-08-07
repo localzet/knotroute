@@ -65,18 +65,27 @@ func run() error {
 	fmt.Println("node", node.Domain())
 	for _, svc := range node.Status().Services {
 		if svc.Published {
-			fmt.Printf("publishing %s as %s -> %s\n", svc.Name, svc.Domain, svc.Target)
+			fmt.Printf("publishing %s as %s -> %s (waiting for introduction points)\n", svc.Name, svc.Domain, svc.Target)
 		}
 	}
+	go logServiceReadiness(ctx, node)
 	healthAddr := env("KNOTROUTE_HEALTH_LISTEN", "0.0.0.0:9090")
 	health := &http.Server{Addr: healthAddr, ReadHeaderTimeout: 3 * time.Second}
 	health.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/healthz" {
-			http.NotFound(w, r)
-			return
-		}
+		status := node.Status()
+		ready := sidecarReady(status)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"ok":true,"node":%q,"version":%q}`, node.Domain(), overlay.Version)
+		switch r.URL.Path {
+		case "/healthz":
+			_, _ = fmt.Fprintf(w, `{"ok":true,"ready":%t,"node":%q,"version":%q,"descriptors":%d}`, ready, node.Domain(), overlay.Version, status.Descriptors)
+		case "/readyz":
+			if !ready {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}
+			_, _ = fmt.Fprintf(w, `{"ok":%t,"node":%q,"version":%q,"descriptors":%d}`, ready, node.Domain(), overlay.Version, status.Descriptors)
+		default:
+			http.NotFound(w, r)
+		}
 	})
 	go func() {
 		if err := health.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -122,7 +131,20 @@ func generateConfig(path string) error {
 			if name == "" || target == "" {
 				return errors.New("KNOTROUTE_SERVICE_NAME and KNOTROUTE_SERVICE_TARGET must be set together")
 			}
-			cfg.Services = []config.Service{{Name: name, Target: target, Publish: true, Allow: []string{"*"}}}
+			metadata := map[string]string{}
+			for key, envName := range map[string]string{
+				"title":       "KNOTROUTE_SERVICE_TITLE",
+				"description": "KNOTROUTE_SERVICE_DESCRIPTION",
+				"tags":        "KNOTROUTE_SERVICE_TAGS",
+				"category":    "KNOTROUTE_SERVICE_CATEGORY",
+				"scheme":      "KNOTROUTE_SERVICE_SCHEME",
+			} {
+				if value := strings.TrimSpace(os.Getenv(envName)); value != "" {
+					metadata[key] = value
+				}
+			}
+			description := strings.TrimSpace(os.Getenv("KNOTROUTE_SERVICE_DESCRIPTION"))
+			cfg.Services = []config.Service{{Name: name, Target: target, Description: description, Publish: true, Allow: []string{"*"}, Metadata: metadata}}
 		}
 	}
 	if len(cfg.Services) == 0 {
@@ -142,6 +164,44 @@ func generateConfig(path string) error {
 		return err
 	}
 	return config.Save(path, cfg)
+}
+
+func sidecarReady(status overlay.Status) bool {
+	published := 0
+	for _, svc := range status.Services {
+		if !svc.Published {
+			continue
+		}
+		published++
+		if len(svc.Introduction) == 0 {
+			return false
+		}
+	}
+	return published > 0 && status.Descriptors > 0
+}
+
+func logServiceReadiness(ctx context.Context, node *overlay.Node) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	ready := map[string]bool{}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			status := node.Status()
+			for _, svc := range status.Services {
+				if !svc.Published {
+					continue
+				}
+				isReady := len(svc.Introduction) > 0 && status.Descriptors > 0
+				if isReady && !ready[svc.ServiceID] {
+					fmt.Printf("service %s ready as %s with %d introduction point(s)\n", svc.Name, svc.Domain, len(svc.Introduction))
+				}
+				ready[svc.ServiceID] = isReady
+			}
+		}
+	}
 }
 
 func splitCSV(raw string) []string {

@@ -22,6 +22,7 @@
       <button class="tab active" data-tab="overview">Обзор</button>
       <button class="tab" data-tab="network">Сеть</button>
       <button class="tab" data-tab="services">Сервисы</button>
+      <button class="tab" data-tab="catalog">Каталог</button>
       <button class="tab" data-tab="names">Имена</button>
       <button class="tab" data-tab="settings">Настройки</button>
     </nav>
@@ -30,10 +31,10 @@
       <div class="tab-page active" data-page="overview">
         <section class="hero panel">
           <div class="identity-block">
-            <span class="eyebrow">КАНОНИЧЕСКИЙ .KNOT-АДРЕС</span>
+            <span class="eyebrow">АДРЕС УЗЛА · НЕ АДРЕС САЙТА</span>
             <div class="identity-row"><code id="domain">—</code><button class="copy" data-copy="domain">Копировать</button></div>
             <div class="secondary-id"><span>ID узла</span><code id="nodeId">—</code><button class="copy mini" data-copy="nodeId">Копировать</button></div><div class="secondary-id"><span>Сеть</span><code id="networkId">—</code><button class="copy mini" data-copy="networkId">Копировать</button></div>
-            <p id="listen">Запуск…</p>
+            <p id="listen">Запуск…</p><p class="node-address-note">Этот адрес идентифицирует узел. Открываемые сервисы смотрите во вкладке «Каталог»; published service identity имеет отдельный .knot-адрес.</p>
           </div>
           <div class="hero-stats">
             <div><strong id="peerCount">0</strong><span>прямых пиров</span></div>
@@ -100,6 +101,15 @@
         <section class="panel editor-panel">
           <div class="section-title"><div><span class="eyebrow">ЛОКАЛЬНЫЕ ПОРТЫ</span><h2>Статические пробросы</h2></div><button class="button" id="addForward">Добавить проброс</button></div>
           <div id="forwardEditor" class="editor-list"></div>
+        </section>
+      </div>
+
+      <div class="tab-page" data-page="catalog">
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">ЛОКАЛЬНОЕ ОБНАРУЖЕНИЕ</span><h2>Каталог доступных сервисов</h2><p>Показывает сервисы, объявленные известными узлами, и service descriptors, которые уже видел этот клиент. Это не глобальный реестр всей сети.</p></div><span class="badge" id="catalogCount">0 сервисов</span></div>
+          <label class="catalog-search"><span>Поиск</span><input id="catalogSearch" placeholder="имя, описание, тег, .knot-адрес…" /></label>
+          <div class="notice">Canonical service identities невозможно перебрать по всему адресному пространству. Для глобального поиска нужен отдельный opt-in подписанный индекс: сервис сам решает, публиковаться ли в каталоге.</div>
+          <div id="catalog" class="catalog-grid empty">Сервисы пока не обнаружены</div>
         </section>
       </div>
 

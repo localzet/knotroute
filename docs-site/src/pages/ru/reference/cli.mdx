@@ -1,0 +1,58 @@
+# CLI reference
+
+Набор команд зависит от release, но основные admin workflows выглядят так.
+
+## Создание node
+
+```bash
+knotroute init --config knotroute.json
+knotroute doctor --config knotroute.json
+knotroute run --config knotroute.json
+```
+
+## Identity/address
+
+```bash
+knotroute id --config knotroute.json
+knotroute address --config knotroute.json
+knotroute address --config knotroute.json --service web
+```
+
+## Resolve
+
+```bash
+knotroute resolve --config knotroute.json example.knot
+```
+
+## Network ID
+
+```bash
+knotroute network create
+```
+
+## Invitation
+
+```bash
+knotroute invite export --config knotroute.json --out network.knotinvite
+knotroute invite import --config knotroute.json --file network.knotinvite
+```
+
+Invitation — bootstrap artifact, а не membership certificate.
+
+## CA
+
+```bash
+knotroute ca path --config knotroute.json
+knotroute ca export --config knotroute.json --out knotroute-root.pem
+```
+
+На Windows доступны install/uninstall операции текущего user trust store.
+
+## Диагностика
+
+```bash
+knotroute doctor --config knotroute.json --probe
+knotroute version
+```
+
+Перед автоматизацией используйте `knotroute <command> --help` именно той версии binary, которую разворачиваете.

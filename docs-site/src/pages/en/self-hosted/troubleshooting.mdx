@@ -1,0 +1,21 @@
+# Server troubleshooting
+
+## Beacon is healthy but clients cannot connect
+
+Check the advertised relay endpoint and `7447/tcp` separately from the Beacon HTTP health endpoint.
+
+## Sidecar is running but service is unreachable
+
+Verify the target from the same Docker network. `localhost:8080` inside the sidecar means the sidecar itself; use a Docker service name such as `app:8080` for a sibling container.
+
+## Agent is offline
+
+Check Control URL/TLS/DNS, persistent Agent data, system time and enrollment state.
+
+## Docker job failed
+
+Confirm `KNOTROUTE_AGENT_DOCKER=true` and the Docker socket mount. If Docker automation is intentionally disabled, the failure is expected.
+
+## Service address changed
+
+Look for a deleted/recreated `/data` volume or a changed service identity path.

@@ -1,11 +1,14 @@
 # Публикация Docker-сервиса
 
-Допустим приложение доступно внутри Docker network как `app:8080`.
+Sidecar — рекомендуемый способ добавить KnotRoute к существующему контейнеру без изменения приложения.
+
+## Минимальный пример
 
 ```yaml
 services:
   app:
     image: example/app:latest
+    restart: unless-stopped
     networks: [private]
 
   knotroute:
@@ -27,6 +30,45 @@ volumes:
   knotroute-data:
 ```
 
-Не публикуйте `app:8080` на host, если сервис нужен только через KnotRoute.
+Приложение `app` здесь вообще не имеет `ports:`.
 
-<Callout type="warning">Не удаляйте persistent `/data`: там лежит service identity. Потеря identity означает новый canonical `.knot` address.</Callout>
+## Что делает sidecar
+
+При первом запуске он:
+
+1. создаёт/читает KnotRoute node identity;
+2. создаёт service identity для `web`;
+3. подключается к network discovery;
+4. публикует signed service descriptor;
+5. принимает rendezvous streams;
+6. подключается к `app:8080` внутри Docker network.
+
+## Где увидеть адрес
+
+```bash
+docker compose logs knotroute
+```
+
+Sidecar печатает строку вида:
+
+```text
+publishing web as ...knot -> app:8080
+```
+
+## Persistent data
+
+<Callout type="danger" title="Не удаляйте volume `/data`">Service identity хранится в persistent data. Если удалить volume и создать sidecar заново, canonical `.knot` address изменится.</Callout>
+
+Делайте backup volume перед migration/upgrade.
+
+## Health endpoint
+
+Sidecar имеет HTTP health listener, типично `:9090/healthz`. Это process-level check, не полноценный end-to-end test.
+
+## Несколько services
+
+Вместо пары `KNOTROUTE_SERVICE_NAME/TARGET` можно передать `KNOTROUTE_SERVICES_JSON` и опубликовать несколько targets. Для независимых приложений обычно удобнее отдельный sidecar per stack: так проще lifecycle, ownership и backups.
+
+## Inbound 7447
+
+Sidecar может работать outbound-only. Публиковать `7447` на host нужно только если вы осознанно хотите, чтобы этот node принимал inbound peering и у вас есть корректный `KNOTROUTE_ADVERTISE`.

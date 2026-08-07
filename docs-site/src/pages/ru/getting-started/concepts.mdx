@@ -1,0 +1,83 @@
+# Основные понятия
+
+Эта страница даёт словарь KnotRoute без погружения в детали wire protocol.
+
+## Network ID
+
+`network_id` — идентификатор независимой overlay-сети. Узлы с разными Network ID не формируют одну сеть.
+
+```text
+kn_...
+```
+
+Это **не пароль** и не криптографический пропуск. Знание Network ID само по себе не должно считаться секретом.
+
+## Node
+
+Node — запущенный экземпляр KnotRoute со своей Ed25519 identity. Он может быть клиентом, relay, service host или сочетать роли.
+
+Node identity используется для аутентификации peer-соединений и адресации direct-сервисов.
+
+## Service identity
+
+Published service может иметь отдельную Ed25519 identity, не связанную с node identity. Из неё получается canonical `.knot` address.
+
+```text
+<service-identity>.knot
+```
+
+Это позволяет перенести сервис на другой host без смены адреса, если сохранить private service identity.
+
+## Beacon
+
+Beacon — HTTP discovery service. Узел отправляет подписанное announcement и получает список кандидатов для peering.
+
+Beacon **не** является центральным каталогом `.knot`-сервисов и не маршрутизирует весь пользовательский трафик.
+
+## Relay
+
+Relay — KnotRoute node, через который могут строиться circuits. Хорошая self-hosted сеть имеет несколько постоянно доступных relay на независимых хостах.
+
+## Circuit
+
+Circuit — multi-hop маршрут, который клиент строит поверх нескольких peers. Каждый hop имеет отдельный криптографический слой.
+
+Circuit — не постоянный VPN-туннель для всей ОС: он создаётся для KnotRoute traffic.
+
+## Directory descriptor
+
+Published service периодически создаёт подписанный descriptor с service identity и introduction points. Descriptor реплицируется на несколько узлов directory layer.
+
+Клиент сначала находит descriptor, затем строит соединение к сервису.
+
+## Introduction point
+
+Service поддерживает обратные соединения к introduction points. Клиент не обязан знать IP hosting node.
+
+## Rendezvous
+
+Клиент выбирает rendezvous point и сообщает его сервису через introduction flow. После этого клиентский и сервисный circuits встречаются на rendezvous.
+
+Payload поверх rendezvous дополнительно защищён end-to-end session keys между клиентом и service identity.
+
+## Sidecar
+
+Sidecar — готовый контейнер KnotRoute, который публикует существующий TCP target:
+
+```text
+sidecar → app:8080
+```
+
+Приложение не обязано знать о KnotRoute и не обязано публиковать свой порт на host.
+
+## Control и Agent
+
+Control — management plane: inventory, deployment, onboarding, UI. Agent работает на управляемом сервере и сам устанавливает исходящее соединение к Control.
+
+Они не входят в обязательный data plane. Если Control недоступен, уже работающие circuits и services продолжают работать.
+
+## Локальный CA
+
+Для браузерного `https://*.knot` клиент может создать локальный Root CA на устройстве. Сертификат нужен только для совместимости браузера; remote service аутентифицируется отдельно через KnotRoute service identity.
+
+CA private key не является сетевым ключом и не должен передаваться другим участникам.

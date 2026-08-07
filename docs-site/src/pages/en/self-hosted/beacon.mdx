@@ -1,3 +1,37 @@
-# Beacon and relays
+# Beacon and bootstrap
 
-Beacon is soft-state peer discovery, not a central service registry. Publish the Beacon HTTP endpoint through HTTPS and expose the raw KnotRoute relay transport separately on TCP/7447.
+Beacon is a signed peer-discovery service and can optionally include a bootstrap relay.
+
+## Deployment
+
+```yaml
+services:
+  beacon:
+    image: ghcr.io/localzet/knotroute-beacon:latest
+    restart: unless-stopped
+    ports:
+      - "7447:7447"
+    expose:
+      - "8080"
+    volumes:
+      - beacon-data:/data
+    environment:
+      KNOTROUTE_NETWORK_ID: "kn_..."
+      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_BEACON_RELAY: "true"
+      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
+      KNOTROUTE_BEACON_RELAY_ADVERTISE: "relay.example.net:7447"
+
+volumes:
+  beacon-data:
+```
+
+Put HTTP `8080` behind HTTPS. Relay `7447` is raw KnotRoute TCP, not an HTTP route.
+
+## Availability
+
+Use multiple Beacon URLs on independent hosts. Existing topology may survive a Beacon outage, but isolated/new clients still need a bootstrap path.
+
+## Scope
+
+Beacon does not provide a complete list of users or `.knot` services and is not a central naming authority.

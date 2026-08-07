@@ -1,0 +1,76 @@
+# Конфигурация `knotroute.json`
+
+Ниже — ориентир по основным группам v3. Точная schema определяется вашей release-версией; перед rollout прогоняйте `knotroute doctor`.
+
+## Identity и network
+
+```json
+{
+  "version": 3,
+  "identity_file": "identity.json",
+  "network_id": "kn_..."
+}
+```
+
+`identity_file` содержит private node identity и требует защиты/backup, если важна стабильность node ID.
+
+## Listen и advertise
+
+```json
+{
+  "listen": ["0.0.0.0:7447"],
+  "advertise": ["relay.example.net:7447"]
+}
+```
+
+Не рекламируйте `127.0.0.1`, container-only address или private NAT address как public endpoint.
+
+## Discovery
+
+Концептуально:
+
+```json
+{
+  "discovery": {
+    "enabled": true,
+    "interval": "30s",
+    "lan": true,
+    "peer_exchange": true,
+    "beacons": ["https://beacon-a.example.net"],
+    "cache_file": "peers.json"
+  }
+}
+```
+
+На public server LAN discovery можно выключить; PEX/cache обычно полезны.
+
+## Privacy/circuits
+
+`circuit_hops` задаёт целевую глубину, но фактическая topology должна позволять построить такой path.
+
+## Directory
+
+Directory settings управляют descriptor replicas, TTL, publish interval и lookup timeout.
+
+Слишком маленький TTL/interval увеличивает control traffic; слишком большой — замедляет обновление stale descriptors.
+
+## Services
+
+```json
+{
+  "services": [{
+    "name": "web",
+    "target": "127.0.0.1:8080",
+    "publish": true,
+    "identity_file": "services/web.identity.json",
+    "intro_count": 3,
+    "allow": ["*"]
+  }]
+}
+```
+
+Для anonymous published service текущая модель предполагает application-layer auth при необходимости ограничения доступа.
+
+## Proxy и dashboard
+
+Локальные proxy/dashboard по умолчанию держите на loopback. Не выставляйте management API наружу без дополнительной security boundary.

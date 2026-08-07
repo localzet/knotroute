@@ -1,3 +1,9 @@
-# SDK and embedded client
+# SDK overview
 
-Applications can embed KnotRoute instead of requiring a separately installed desktop client. Use `pkg/knotclient` in Go or the Android AAR built from `mobile/knotmobile`.
+KnotRoute can be embedded so an application does not require a separately installed client.
+
+Available layers include `pkg/knotclient`, `pkg/knotserver`, the gomobile-friendly `mobile/knotmobile` wrapper, `pkg/knotapp` primitives and an encrypted mailbox package.
+
+Use an embedded client when KnotRoute is part of the product transport. Use a standalone proxy when the application already supports SOCKS5/HTTP proxying and independent lifecycle is preferable.
+
+Manage the client as a long-lived resource: create, start, dial/use, then close on application shutdown rather than creating a new node for every request.

@@ -1,19 +1,39 @@
-# SDK и embedded client
+# SDK: обзор
 
-Go-приложение может включить KnotRoute core и не требовать standalone-клиента.
+KnotRoute можно встроить в приложение, чтобы пользователю не требовался отдельно установленный desktop/mobile client.
 
-```go
-client, err := knotclient.New(knotclient.Options{
-    DataDir: "./knot-data",
-    Beacons: []string{"https://beacon.example"},
-    CircuitHops: 3,
-})
-if err != nil { panic(err) }
+## Варианты интеграции
 
-if err := client.Start(ctx); err != nil { panic(err) }
-defer client.Close()
+- `pkg/knotclient` — приложение само становится KnotRoute client;
+- `pkg/knotserver` — приложение публикует in-process service;
+- `mobile/knotmobile` — gomobile-friendly wrapper для Android AAR;
+- `pkg/knotapp` — application primitives;
+- `pkg/knotmailbox` — encrypted store-and-forward mailbox primitive.
 
-conn, err := client.Dial(ctx, "service-address.knot")
+## Когда нужен embedded client
+
+Подходит для messenger, admin app, sync client, game client, IoT controller или любого продукта, где `.knot` должен быть внутренней транспортной функцией.
+
+Пользователь запускает одно приложение, а не цепочку `app → local proxy → отдельно установленный KnotRoute`.
+
+## Когда лучше proxy
+
+Если приложение уже поддерживает SOCKS5/HTTP proxy и не хочется связывать lifecycle с KnotRoute core, standalone node проще сопровождать.
+
+## Lifecycle
+
+Embedded integration должна явно управлять:
+
+```text
+New → Start(ctx) → Dial/HTTP → Close
 ```
 
-Для Android release также публикуется AAR с `mobile/knotmobile` binding.
+Не создавайте новый KnotRoute node для каждого HTTP request.
+
+## Storage
+
+Даже embedded client имеет identity/cache/config state. Решите, нужен ли stable client identity или ephemeral mode подходит вашему приложению.
+
+## Security boundary
+
+Не экспортируйте KnotRoute private identities в analytics/crash reports. Если приложение использует собственную user identity, не смешивайте её автоматически с KnotRoute node identity без явной модели приватности.

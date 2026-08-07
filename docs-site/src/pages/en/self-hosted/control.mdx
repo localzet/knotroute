@@ -1,5 +1,36 @@
-# Control and Agent
+# KnotRoute Control
 
-Control manages inventory, deployment jobs and onboarding but never routes `.knot` traffic. Agents establish outbound authenticated management sessions to Control and optionally manage KnotRoute Docker workloads.
+Control is the optional management plane for networks, Agents, managed Beacons/relays, sidecar services, jobs and onboarding.
 
-<Callout type="warning">A Docker socket is effectively host-administrative access. Mount it only into the Agent, never into Control.</Callout>
+## Compose
+
+```yaml
+services:
+  control:
+    image: ghcr.io/localzet/knotroute-control:latest
+    restart: unless-stopped
+    environment:
+      KNOTROUTE_CONTROL_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_CONTROL_ADMIN_PASSWORD: "${KNOTROUTE_CONTROL_ADMIN_PASSWORD}"
+      KNOTROUTE_CONTROL_ENROLL_TOKEN: "${KNOTROUTE_CONTROL_ENROLL_TOKEN}"
+      KNOTROUTE_CONTROL_PUBLIC_URL: "https://control.example.net"
+    volumes:
+      - control-data:/data
+
+volumes:
+  control-data:
+```
+
+Use distinct admin and enrollment secrets.
+
+## Security boundary
+
+Control should be served only over HTTPS and should never receive the Docker socket. Docker management belongs on Agents.
+
+## Failure behavior
+
+If Control is down, existing relays, sidecars, circuits and published services continue to operate. Management jobs and centralized inventory are temporarily unavailable.
+
+## Backup
+
+Preserve Control `/data` to retain network profiles, Agent registrations and operational state.

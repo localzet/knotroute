@@ -1,0 +1,31 @@
+# Linux and macOS
+
+Use a CLI node with local SOCKS5/HTTP gateways for workstations, development systems and automation.
+
+## Initialize and run
+
+```bash
+knotroute init --config ~/.config/knotroute/knotroute.json
+knotroute doctor --config ~/.config/knotroute/knotroute.json
+knotroute run --config ~/.config/knotroute/knotroute.json
+```
+
+## SOCKS5
+
+Typical endpoint: `127.0.0.1:9477`.
+
+Applications must send the `.knot` hostname to the proxy instead of resolving it with public DNS first.
+
+```bash
+curl --socks5-hostname 127.0.0.1:9477 http://example.knot/
+```
+
+## HTTP proxy
+
+Typical endpoint: `127.0.0.1:9478`.
+
+```bash
+curl -x http://127.0.0.1:9478 http://example.knot/
+```
+
+For an always-on Linux node, run the binary as an unprivileged system service with a persistent data directory.

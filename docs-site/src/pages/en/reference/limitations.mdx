@@ -1,0 +1,31 @@
+# v3 limitations
+
+KnotRoute intentionally does not claim several properties yet.
+
+## Not Tor-equivalent anonymity
+
+Onion-style circuits and hidden-service-like rendezvous exist, but there is not enough auditing, guard/Sybil design or traffic-analysis resistance to claim Tor-level anonymity.
+
+## No network-wide membership PKI
+
+Network ID separates overlays but does not authorize members.
+
+## No global friendly-name registry
+
+Canonical names are cryptographic identities. Friendly aliases are local/external conventions without built-in global uniqueness.
+
+## No public-Internet exit nodes
+
+KnotRoute routes services inside the overlay rather than arbitrary public Internet traffic.
+
+## DATAGRAM is not UDP
+
+The current primitive is message-oriented but rides reliable stream semantics.
+
+## Control is not enterprise IAM
+
+The current self-hosted Control model is intentionally simpler than multi-user RBAC/OIDC enterprise administration.
+
+## Maturity
+
+The project has not had years of public cryptographic auditing or adversarial deployment. Use defense in depth, staged rollout and monitoring.

@@ -1,7 +1,40 @@
 # Windows client
 
-Install the Windows release, run `knotroute-desktop.exe`, add the network profile and enable `.knot` system integration from the tray. The integration installs a per-device KnotRoute Root CA and a PAC rule scoped to `.knot`.
+The Windows release includes the CLI, desktop tray controller and a Windows Service wrapper. Normal desktop users should start with `knotroute-desktop.exe`.
+
+## Install
 
 ```powershell
-knotroute doctor --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json" --probe
+powershell -ExecutionPolicy Bypass -File .\Install-KnotRoute.ps1
 ```
+
+Then launch the desktop application.
+
+## System integration
+
+KnotRoute does not create a TUN adapter by default. Windows integration can install a PAC rule that routes `.knot` browser traffic to the local KnotRoute HTTP proxy while leaving ordinary destinations direct from KnotRoute's perspective.
+
+This generally allows coexistence with VPN/TUN applications because non-`.knot` traffic continues through the OS routing stack.
+
+## HTTPS
+
+KnotRoute can create and install a per-device local Root CA into the current user's trust store. It is used only for local `.knot` browser compatibility.
+
+Never import another user's private CA key.
+
+## Typical local endpoints
+
+| Function | Address |
+| --- | --- |
+| Dashboard | `127.0.0.1:8484` |
+| SOCKS5 | `127.0.0.1:9477` |
+| HTTP proxy | `127.0.0.1:9478` |
+
+## Diagnostics
+
+```powershell
+knotroute doctor --config knotroute.json --probe
+knotroute address --config knotroute.json
+```
+
+Check Network ID, peer count, routes/circuits and recent events in the dashboard.

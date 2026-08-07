@@ -1,0 +1,49 @@
+# Порты и сетевые потоки
+
+Не все KnotRoute ports должны быть доступны извне.
+
+| Порт | Компонент | Обычно где доступен |
+| --- | --- | --- |
+| `7447/tcp` | peer/relay transport | Internet для public relay; не нужен outbound-only client |
+| `8080/tcp` | Beacon HTTP API | за HTTPS reverse proxy |
+| `8080/tcp` | Control/docs container | за reverse proxy; это отдельные containers |
+| `9090/tcp` | sidecar health | internal monitoring network |
+| `8484/tcp` | local dashboard | loopback |
+| `9477/tcp` | local SOCKS5 | loopback |
+| `9478/tcp` | local HTTP proxy | loopback |
+
+## Типовые потоки
+
+### Клиент
+
+```text
+client → HTTPS Beacon :443
+client → relay :7447
+```
+
+Inbound port клиенту не обязателен.
+
+### Public relay
+
+```text
+Internet → relay :7447
+```
+
+### Beacon
+
+```text
+Internet :443 → reverse proxy → beacon :8080
+Internet :7447 → beacon relay :7447
+```
+
+### Sidecar
+
+```text
+sidecar → peers/relays outbound
+sidecar → app:internal-port
+monitor → sidecar:9090 (optional trusted network)
+```
+
+## Firewall principle
+
+Открывайте только реально используемые listeners. Dashboard/SOCKS/HTTP proxy на server-side infrastructure обычно не должны слушать public interface.

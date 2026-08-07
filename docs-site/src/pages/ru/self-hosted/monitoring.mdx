@@ -1,0 +1,66 @@
+# Мониторинг
+
+Мониторинг KnotRoute лучше разделить на process, overlay и end-to-end уровни.
+
+## Process-level
+
+Проверяйте, что контейнер/процесс жив и health endpoint отвечает.
+
+Beacon:
+
+```bash
+curl -fsS https://beacon.example.net/healthz
+```
+
+Sidecar (из trusted network):
+
+```bash
+curl -fsS http://sidecar:9090/healthz
+```
+
+## Overlay-level
+
+Следите за:
+
+- connected peers;
+- routes/topology;
+- circuit creation failures;
+- descriptor count/lookup failures;
+- reconnect loops;
+- резко растущими error events;
+- version skew инфраструктурных nodes.
+
+## Management-level
+
+Control показывает Agent heartbeat и job results. Alert полезен, если Agent давно не выходил на связь, но это не означает автоматически, что data plane мёртв.
+
+## End-to-end synthetic check
+
+Самая полезная проверка — отдельный client в другом network/provider, который открывает test `.knot` service.
+
+```text
+synthetic client
+    ↓
+Beacon/discovery
+    ↓
+circuit
+    ↓
+directory + rendezvous
+    ↓
+test service
+```
+
+Такой check покрывает гораздо больше реальных failure modes, чем `/healthz`.
+
+## Что логировать
+
+Храните:
+
+- timestamp;
+- component/version;
+- node/service IDs;
+- peer connection state;
+- job ID/status;
+- error class.
+
+Не собирайте private keys, enrollment tokens или application secrets в централизованные logs.

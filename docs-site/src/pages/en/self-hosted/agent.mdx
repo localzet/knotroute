@@ -1,0 +1,33 @@
+# KnotRoute Agent
+
+Agent runs on a managed server and establishes outbound HTTPS communication with Control. No inbound management port is required.
+
+## Compose
+
+```yaml
+services:
+  agent:
+    image: ghcr.io/localzet/knotroute-agent:latest
+    restart: unless-stopped
+    environment:
+      KNOTROUTE_CONTROL_URL: "https://control.example.net"
+      KNOTROUTE_CONTROL_ENROLL_TOKEN: "${KNOTROUTE_CONTROL_ENROLL_TOKEN}"
+      KNOTROUTE_AGENT_NAME: "prod-01"
+      KNOTROUTE_AGENT_DOCKER: "true"
+    volumes:
+      - agent-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  agent-data:
+```
+
+## Enrollment and identity
+
+The enrollment token is needed for first registration. Afterwards the Agent uses its persistent Ed25519 identity; preserve `/data`.
+
+## Docker access
+
+<Callout type="danger">Docker socket access is effectively high privilege on the host. Mount it only into Agents that are intentionally allowed to run managed Docker jobs.</Callout>
+
+Set `KNOTROUTE_AGENT_DOCKER=false` and omit the socket when deployment automation is not needed.

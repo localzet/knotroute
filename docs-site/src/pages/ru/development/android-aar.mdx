@@ -1,0 +1,38 @@
+# Android AAR
+
+Android binding строится через `gomobile bind` из `mobile/knotmobile`.
+
+## Сборка
+
+```bash
+mkdir -p android/app/libs
+gomobile bind \
+  -target=android \
+  -androidapi 26 \
+  -o android/app/libs/knotroute-client.aar \
+  ./mobile/knotmobile
+```
+
+В актуальном проекте `golang.org/x/mobile` зафиксирован в `go.mod` как tool dependency, поэтому `go mod tidy` не должен удалять required graph.
+
+## Что экспортирует wrapper
+
+Mobile wrapper рассчитан на gomobile-compatible API и даёт приложению возможность:
+
+- создать/start client;
+- получить node address;
+- использовать local HTTP proxy;
+- получить Root CA PEM;
+- открыть local forward к `.knot` service.
+
+## Интеграция с WebView
+
+Standalone Android client направляет WebView через local KnotRoute proxy. Если вы встраиваете AAR в своё приложение, можно выбрать тот же pattern или работать через explicit forward/native protocol.
+
+## CA installation
+
+Android user CA требует system UI и user confirmation. Не проектируйте onboarding так, будто приложение сможет поставить root certificate полностью silent.
+
+## ProGuard/R8
+
+Если gomobile-generated classes вызываются через reflection, обязательно сохраните необходимые classes rules. После release minification прогоняйте реальный smoke test, а не только debug APK.

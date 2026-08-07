@@ -3,9 +3,22 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }
-html { background: #080b10; }
+html { background: #080b10; scroll-behavior: smooth; }
 body { margin: 0; background: #080b10; }
 ::selection { background: rgba(103,239,160,.23); color: white; }
-.prose h1 { font-size: 2.55rem; letter-spacing: -.04em; }
-.prose h2 { margin-top: 2.4em; border-top: 1px solid #202938; padding-top: 1.4em; }
+.prose { color: #aeb9c6; line-height: 1.78; }
+.prose h1 { margin-bottom: .55em; font-size: clamp(2.2rem, 5vw, 3.25rem); letter-spacing: -.045em; color: #f8fafc; }
+.prose h1 + p { font-size: 1.1rem; line-height: 1.75; color: #94a3b8; }
+.prose h2 { margin-top: 2.6em; border-top: 1px solid #202938; padding-top: 1.45em; letter-spacing: -.025em; }
+.prose h3 { margin-top: 2em; letter-spacing: -.015em; }
+.prose strong { color: #e8eef5; }
+.prose code::before, .prose code::after { content: none; }
+.prose :not(pre) > code { border: 1px solid #202938; border-radius: .4rem; background: rgba(255,255,255,.035); padding: .08rem .35rem; font-size: .88em; }
+.prose pre { overflow-x: auto; border-radius: .9rem; padding: 1rem 1.1rem; }
 .prose pre code { color: #d7e1ec; }
+.prose table { display: block; overflow-x: auto; white-space: nowrap; }
+.prose thead { border-bottom-color: #2a3444; }
+.prose tbody tr { border-bottom-color: #202938; }
+.prose blockquote { border-left-color: #35d47d; color: #aeb9c6; }
+.prose a { text-decoration-color: rgba(103,239,160,.35); text-underline-offset: 3px; }
+.prose a:hover { text-decoration-color: #67efa0; }

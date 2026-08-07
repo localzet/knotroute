@@ -1,0 +1,18 @@
+# Android AAR
+
+The mobile binding is built with `gomobile bind` from `mobile/knotmobile`.
+
+```bash
+mkdir -p android/app/libs
+gomobile bind \
+  -target=android \
+  -androidapi 26 \
+  -o android/app/libs/knotroute-client.aar \
+  ./mobile/knotmobile
+```
+
+The project pins `golang.org/x/mobile` in the Go module tool graph for reproducible CI.
+
+The wrapper supports starting a client, obtaining node/proxy information, exporting the local CA public certificate and opening local forwards to KnotRoute destinations.
+
+If generated classes are accessed through reflection, validate R8/ProGuard rules against the release build, not only debug APKs.

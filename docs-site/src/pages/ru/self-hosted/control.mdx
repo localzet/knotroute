@@ -1,38 +1,67 @@
-# KnotRoute Control и Agent
+# KnotRoute Control
 
-Control — опциональная веб-панель для networks, servers, Beacons, relays, services, jobs и onboarding.
+Control — опциональный management plane для нескольких KnotRoute servers и networks. Он не участвует в routing пользовательского трафика.
 
-## Control
+## Базовый Compose
 
 ```yaml
 services:
   control:
     image: ghcr.io/localzet/knotroute-control:latest
     restart: unless-stopped
+    environment:
+      KNOTROUTE_CONTROL_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_CONTROL_ADMIN_PASSWORD: "${KNOTROUTE_CONTROL_ADMIN_PASSWORD}"
+      KNOTROUTE_CONTROL_ENROLL_TOKEN: "${KNOTROUTE_CONTROL_ENROLL_TOKEN}"
+      KNOTROUTE_CONTROL_PUBLIC_URL: "https://control.example.net"
     volumes:
       - control-data:/data
-    environment:
-      KNOTROUTE_CONTROL_ADMIN_PASSWORD: ${KNOTROUTE_CONTROL_ADMIN_PASSWORD}
-      KNOTROUTE_CONTROL_ENROLL_TOKEN: ${KNOTROUTE_CONTROL_ENROLL_TOKEN}
+    expose:
+      - "8080"
+
+volumes:
+  control-data:
 ```
 
-Публикуйте Control только через HTTPS reverse proxy.
+## Обязательные secrets
 
-## Agent
+`KNOTROUTE_CONTROL_ADMIN_PASSWORD` — пароль входа в UI/API.
 
-Agent сам устанавливает исходящую HTTPS-связь с Control. Открывать management port на сервере не требуется.
+`KNOTROUTE_CONTROL_ENROLL_TOKEN` — отдельный secret для первичного enrollment Agents.
 
-```yaml
-  agent:
-    image: ghcr.io/localzet/knotroute-agent:latest
-    restart: unless-stopped
-    volumes:
-      - agent-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      KNOTROUTE_CONTROL_URL: https://control.example.net
-      KNOTROUTE_AGENT_ENROLL_TOKEN: ${KNOTROUTE_CONTROL_ENROLL_TOKEN}
-      KNOTROUTE_AGENT_DOCKER: "true"
-```
+Не используйте одно и то же значение.
 
-<Callout type="warning">Docker socket почти эквивалентен root-доступу к хосту. Монтируйте его только Agent'у, никогда Control.</Callout>
+## Public URL
+
+`KNOTROUTE_CONTROL_PUBLIC_URL` нужен для корректных generated onboarding/deployment links. Указывайте внешний HTTPS URL, который видят Agents и администраторы.
+
+## Что хранит Control
+
+- network profiles;
+- registered agents/public keys;
+- inventory managed components;
+- deployment job state;
+- onboarding metadata;
+- audit/runtime state, предусмотренный текущей версией.
+
+Control не должен хранить service private identity, если для конкретной операции это не требуется архитектурой. Service identity остаётся на sidecar host.
+
+## Публикация через reverse proxy
+
+Control публикуйте только по HTTPS. Не выставляйте container port `8080` напрямую в Internet, если уже есть Traefik/Caddy/nginx.
+
+## Что произойдёт при остановке Control
+
+Работающий data plane не остановится. Agents временно перестанут получать jobs/отправлять heartbeat, но Beacon/relay/sidecars не зависят от Control для обработки traffic.
+
+## Что Control не делает
+
+- не является глобальным `.knot` registry;
+- не выдаёт сетевые CA certificates;
+- не является обязательным peer coordinator;
+- не превращает Network ID в membership token;
+- не должен иметь Docker socket.
+
+## Backup
+
+Бэкапьте `/data` Control вместе с deployment config. Потеря Control data не должна уничтожить service identities, но приведёт к потере inventory/enrollment state и усложнит управление.

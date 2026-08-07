@@ -1,0 +1,23 @@
+# HTTPS and the local CA
+
+Canonical `.knot` names are not ordinary public DNS names, so client-side browser compatibility uses a local per-device CA.
+
+## Two trust layers
+
+```text
+browser -- local TLS --> KnotRoute proxy -- authenticated service session --> .knot service
+```
+
+The browser trusts the local proxy certificate. KnotRoute independently authenticates the remote service identity.
+
+## Server-side impact
+
+A hidden web service can usually expose plain HTTP to its local sidecar, for example `app:8080`. A public WebPKI certificate is still needed for any ordinary public hostname served through Traefik/Caddy/nginx.
+
+## Certificate errors
+
+Do not click through certificate warnings. Verify CA installation, proxy use, system time and the `.knot` hostname.
+
+## Why not one network-wide CA
+
+A shared CA private key would create an unnecessary global secret. A local CA limits compromise impact to a single device and keeps Control/Beacon out of the certificate-authority role.

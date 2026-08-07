@@ -1,0 +1,29 @@
+# Client troubleshooting
+
+Work through the connection stack instead of reinstalling everything.
+
+## Local node
+
+Run `knotroute doctor --probe` and confirm the local process is healthy.
+
+## Network ID
+
+Client and service must use the same Network ID.
+
+## Peers
+
+If peer count is zero, check Beacon HTTPS, outbound firewall rules, static seeds, peer cache, system time and relay TCP reachability.
+
+## Service descriptor
+
+If routing exists but a canonical service does not resolve, inspect the publisher logs and descriptor/introduction health.
+
+## Local target
+
+Verify the application is reachable from the sidecar host/network. KnotRoute cannot repair an unavailable upstream service.
+
+## Browser/proxy
+
+Check PAC/system proxy configuration, SOCKS remote hostname resolution, local CA trust and application redirects.
+
+<Callout type="danger">Do not post private identity files, Control secrets, enrollment tokens or CA private keys in support logs.</Callout>

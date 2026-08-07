@@ -1,0 +1,57 @@
+# HTTPS и локальный CA
+
+`.knot` не является публичной DNS-зоной, поэтому обычный Let's Encrypt не может быть универсальным механизмом для canonical KnotRoute identities. Для совместимости с браузерным HTTPS используется локальный CA клиента.
+
+## Два разных слоя доверия
+
+Важно разделять:
+
+```text
+Browser TLS
+    │
+    │ сертификат от локального CA
+    ▼
+local KnotRoute proxy
+    │
+    │ authenticated KnotRoute service session
+    ▼
+remote .knot service
+```
+
+Браузер доверяет локальному proxy, а KnotRoute core независимо проверяет service identity.
+
+## Что хранится на клиенте
+
+Локальный CA состоит из:
+
+- root public certificate;
+- root private key;
+- short-lived generated `.knot` leaf certificates.
+
+Private key должен оставаться только на конкретном устройстве.
+
+## Что должен делать владелец сайта
+
+Для private `.knot` publication приложению обычно достаточно HTTP listener внутри host/Docker network:
+
+```text
+sidecar → app:8080
+```
+
+Публичный WebPKI certificate на `app:8080` не требуется, если этот listener используется только KnotRoute sidecar.
+
+Если тот же app одновременно доступен через обычный Internet hostname, публичный TLS остаётся обязанностью Traefik/Caddy/nginx как обычно.
+
+## Ошибка сертификата
+
+Если браузер показывает certificate warning, не обходите его. Проверьте:
+
+1. CA установлен на текущем устройстве.
+2. Browser использует соответствующий trust store.
+3. Browser действительно идёт через KnotRoute proxy.
+4. Системное время корректно.
+5. Hostname заканчивается на `.knot`.
+
+## Почему нет общего сетевого CA
+
+Общий CA создал бы один extremely sensitive private key, компрометация которого затронула бы всех клиентов. Локальная схема ограничивает последствия конкретным устройством и не делает Control/Beacon CA-authority сети.

@@ -1,14 +1,62 @@
 # Android-клиент
 
-Android APK содержит KnotRoute core внутри приложения и не использует `VpnService`/TUN.
+Android app встраивает KnotRoute core через gomobile AAR. Отдельный desktop/daemon на телефоне не нужен.
 
-## Подключение
+## Первый запуск
 
-1. Откройте QR/deep-link `knotroute://join?...` из Control или создайте профиль вручную.
-2. Выберите профиль сети и запустите foreground service.
-3. Для HTTPS установите локальный CA через штатный Android certificate installer.
-4. Открывайте `.knot` в встроенном браузере.
+Рекомендуемый путь:
 
-## Что в QR
+1. Получить QR/deep-link из KnotRoute Control.
+2. Открыть `knotroute://join?...` на устройстве.
+3. Проверить Network ID и список Beacon.
+4. Сохранить network profile.
+5. Запустить соединение.
+6. При необходимости HTTPS установить локальный CA через системный Android dialog.
 
-Только название профиля, `network_id` и Beacon URL. Приватных ключей там нет.
+## Network profiles
+
+Приложение поддерживает несколько профилей, например:
+
+```text
+Production
+Test
+Home
+Lab
+```
+
+У каждого профиля собственные Network ID, Beacon URLs и client settings.
+
+## Встроенный браузер
+
+`.knot`-сайт можно открыть прямо в приложении. WebView направляется в локальный KnotRoute HTTP proxy.
+
+Приложение не использует `VpnService`, поэтому не претендует на системный VPN slot.
+
+## HTTPS CA
+
+Android не позволяет приложению молча добавить пользовательский Root CA. KnotRoute вызывает штатный системный installation UI; действие подтверждает пользователь.
+
+KnotRoute WebView не должен обходить TLS errors через `proceed()` — ошибка сертификата считается ошибкой подключения.
+
+## QR и deep links
+
+Control генерирует URI с onboarding-параметрами, например:
+
+```text
+knotroute://join?network_id=kn_...&name=Production&beacon=https%3A%2F%2Fbeacon.example.net
+```
+
+В QR нет private key. Он передаёт bootstrap profile, а не identity пользователя.
+
+## Диагностика
+
+Если профиль сохранён, но соединения нет, проверьте:
+
+- правильный Network ID;
+- доступность Beacon по HTTPS;
+- наличие Internet connectivity;
+- foreground service permission/notification;
+- системное время устройства;
+- logs/diagnostics внутри приложения.
+
+Для проблем конкретно с `.knot` страницей смотрите [troubleshooting клиентов](/ru/client/troubleshooting).

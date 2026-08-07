@@ -1,0 +1,75 @@
+# Quick start
+
+This is a minimal learning deployment: one Beacon/bootstrap relay, one sidecar service and one client.
+
+<Callout type="info">Do not use a single Beacon/relay as the final production topology. The goal here is to understand the flow.</Callout>
+
+## 1. Create a Network ID
+
+```bash
+knotroute network create
+```
+
+Use the resulting `kn_...` on every component of this overlay.
+
+## 2. Run a Beacon
+
+```yaml
+services:
+  beacon:
+    image: ghcr.io/localzet/knotroute-beacon:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "7447:7447"
+    volumes:
+      - beacon-data:/data
+    environment:
+      KNOTROUTE_NETWORK_ID: "kn_..."
+      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_BEACON_RELAY: "true"
+      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
+      KNOTROUTE_BEACON_RELAY_ADVERTISE: "relay.example.net:7447"
+
+volumes:
+  beacon-data:
+```
+
+For production, put the Beacon HTTP endpoint behind HTTPS while exposing relay TCP separately.
+
+## 3. Publish an application
+
+```yaml
+services:
+  app:
+    image: nginx:alpine
+    networks: [private]
+
+  knotroute:
+    image: ghcr.io/localzet/knotroute-sidecar:latest
+    restart: unless-stopped
+    networks: [private]
+    volumes:
+      - knotroute-data:/data
+    environment:
+      KNOTROUTE_NETWORK_ID: "kn_..."
+      KNOTROUTE_BEACONS: "https://beacon.example.net"
+      KNOTROUTE_SERVICE_NAME: "web"
+      KNOTROUTE_SERVICE_TARGET: "app:80"
+
+networks:
+  private:
+
+volumes:
+  knotroute-data:
+```
+
+Read the sidecar logs to get the published `.knot` address.
+
+## 4. Configure a client
+
+The client needs at least the Network ID and a Beacon URL. Windows and Android provide dedicated clients; Linux/macOS can use the CLI node and local proxy endpoints.
+
+## 5. Verify end to end
+
+A useful test crosses discovery, circuit creation, directory lookup, rendezvous and the local application target. A process health endpoint alone does not cover that full path.

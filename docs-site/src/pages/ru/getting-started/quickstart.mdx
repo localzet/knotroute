@@ -1,0 +1,108 @@
+# Быстрый старт
+
+Ниже — минимальный практический сценарий: один Beacon/bootstrap relay, один sidecar-сервис и клиент.
+
+<Callout type="info">Для production не останавливайтесь на одном Beacon/relay. Эта схема нужна, чтобы понять механику.</Callout>
+
+<Steps>
+  <Step title="Создайте Network ID">На машине с `knotroute` выполните `knotroute network create` и сохраните `kn_...`.</Step>
+  <Step title="Поднимите Beacon">Запустите `knotroute-beacon` или Docker image и откройте relay TCP-порт `7447`.</Step>
+  <Step title="Опубликуйте сервис">Добавьте `knotroute-sidecar` рядом с приложением и укажите target вроде `app:8080`.</Step>
+  <Step title="Подключите клиента">Передайте клиенту Network ID и Beacon URL либо onboarding profile из Control.</Step>
+  <Step title="Откройте .knot">Возьмите service address из sidecar logs/Control и откройте его через KnotRoute client.</Step>
+</Steps>
+
+## 1. Создать сеть
+
+```bash
+knotroute network create
+```
+
+Результат:
+
+```text
+kn_...
+```
+
+Используйте этот ID во всех компонентах одной сети.
+
+## 2. Beacon через Docker
+
+```yaml
+services:
+  beacon:
+    image: ghcr.io/localzet/knotroute-beacon:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "7447:7447"
+    volumes:
+      - beacon-data:/data
+    environment:
+      KNOTROUTE_NETWORK_ID: "kn_..."
+      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_BEACON_RELAY: "true"
+      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
+      KNOTROUTE_BEACON_RELAY_ADVERTISE: "relay.example.net:7447"
+
+volumes:
+  beacon-data:
+```
+
+Для production Beacon HTTP лучше отдавать через HTTPS reverse proxy, а `7447/tcp` оставить отдельным raw TCP endpoint.
+
+## 3. Sidecar рядом с приложением
+
+```yaml
+services:
+  app:
+    image: nginx:alpine
+    networks: [private]
+
+  knotroute:
+    image: ghcr.io/localzet/knotroute-sidecar:latest
+    restart: unless-stopped
+    networks: [private]
+    volumes:
+      - knotroute-data:/data
+    environment:
+      KNOTROUTE_NETWORK_ID: "kn_..."
+      KNOTROUTE_BEACONS: "https://beacon.example.net"
+      KNOTROUTE_SERVICE_NAME: "web"
+      KNOTROUTE_SERVICE_TARGET: "app:80"
+
+networks:
+  private:
+
+volumes:
+  knotroute-data:
+```
+
+Посмотрите logs:
+
+```bash
+docker compose logs -f knotroute
+```
+
+Sidecar печатает published service address.
+
+## 4. Клиент
+
+На Windows используйте desktop app; на Android — Android client; на Linux/macOS можно запустить CLI node и направить браузер/приложение на локальный HTTP/SOCKS proxy.
+
+Клиенту нужны как минимум:
+
+```text
+Network ID: kn_...
+Beacon:     https://beacon.example.net
+```
+
+## 5. Проверка
+
+Проверьте не только `/healthz`, а реальный end-to-end путь с другой машины:
+
+```text
+client → discovery → circuit → directory → rendezvous → sidecar → app
+```
+
+Если `.knot` не открывается, используйте [пошаговый troubleshooting](/ru/client/troubleshooting).

@@ -1,6 +1,18 @@
-# Beacon и relays
+# Beacon и bootstrap
 
-Beacon — soft-state discovery, а не центральная база сервисов. Он принимает подписанные node announcements и отдаёт candidate peers.
+Beacon помогает KnotRoute nodes находить peers. В типовом deployment он также может запускать собственный bootstrap relay.
+
+## Что отправляет client
+
+Discovery announcement содержит Network ID, node identity, reachable endpoints (если они есть), timestamp и signature.
+
+Client-only node может использовать Beacon даже без собственного inbound endpoint.
+
+## Что возвращает Beacon
+
+Beacon возвращает кандидатов той же Network ID. Реальное peer-соединение затем проходит отдельную KnotRoute authentication/handshake.
+
+## Docker
 
 ```yaml
 services:
@@ -9,12 +21,51 @@ services:
     restart: unless-stopped
     ports:
       - "7447:7447"
+    expose:
+      - "8080"
+    volumes:
+      - beacon-data:/data
     environment:
       KNOTROUTE_NETWORK_ID: "kn_..."
       KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
       KNOTROUTE_BEACON_RELAY: "true"
       KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
       KNOTROUTE_BEACON_RELAY_ADVERTISE: "relay-a.example.net:7447"
+
+volumes:
+  beacon-data:
 ```
 
-HTTP discovery обычно публикуется через Traefik/Caddy как HTTPS. `7447/tcp` — сырой KnotRoute transport.
+## HTTP через HTTPS
+
+Beacon API обычно ставится за reverse proxy:
+
+```text
+Internet :443 → Traefik → beacon:8080
+```
+
+Relay port — raw TCP:
+
+```text
+Internet :7447 → beacon:7447
+```
+
+Не пытайтесь отправлять relay TCP в обычный Traefik HTTP router.
+
+## Health
+
+```bash
+curl -fsS https://beacon.example.net/healthz
+```
+
+Ожидается JSON с `ok: true`.
+
+## Почему Beacon должно быть несколько
+
+Один Beacon — простой availability SPOF для новых клиентов. Existing topology может пережить его падение благодаря peers/PEX/cache, но новые/изолированные nodes могут потерять bootstrap.
+
+Используйте 2+ URL на разных hosts/providers.
+
+## Чего Beacon не знает
+
+Beacon не является полным каталогом пользователей или services. Он не должен использоваться как источник списка всех `.knot` addresses.

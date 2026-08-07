@@ -1,0 +1,38 @@
+# Go client/server SDK
+
+## Client
+
+Концептуальный пример:
+
+```go
+client, err := knotclient.New(knotclient.Options{
+    DataDir:     "./knot-data",
+    NetworkID:   "kn_...",
+    Beacons:     []string{"https://beacon.example.net"},
+    CircuitHops: 3,
+})
+if err != nil { /* handle */ }
+
+if err := client.Start(ctx); err != nil { /* handle */ }
+defer client.Close()
+
+conn, err := client.Dial(ctx, "service-address.knot")
+```
+
+`Dial` выбирает нужный путь для service identity/direct node address внутри SDK.
+
+## HTTP client
+
+SDK может предоставить `DialContext`, который удобно подключить к `http.Transport` или использовать готовый helper `HTTPClient()`.
+
+Это позволяет HTTP application работать через KnotRoute без system proxy.
+
+## Server
+
+`pkg/knotserver` позволяет публиковать handler in-process. Внутри используется local pipe target, поэтому не обязательно открывать TCP listener только ради KnotRoute.
+
+Подходит для API/daemon, где KnotRoute является встроенным transport.
+
+## Context cancellation
+
+Всегда передавайте cancellable context и корректно закрывайте client/server при shutdown приложения. Network reconnect loops должны прекращаться вместе с lifecycle продукта.

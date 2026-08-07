@@ -1,0 +1,25 @@
+# Protocol architecture
+
+## Peer layer
+
+Direct peers establish authenticated transport using node identities and verify the Network ID.
+
+## Topology
+
+Signed link-state information builds the routable graph. An edge must be mutually represented before it becomes usable for routing.
+
+## Onion circuits
+
+The client builds a telescopic multi-hop circuit with independent key material and AEAD protection for each hop.
+
+## Published services
+
+A service maintains introduction circuits, publishes signed descriptors, and joins a client-selected rendezvous point. The final service session has additional end-to-end protection between client and service identity.
+
+## Directory
+
+Descriptors contain service identity, Network ID, introduction points, revision and expiry and are replicated to several directory nodes using deterministic proximity. The current implementation is DHT-like but should not be described as a full Kademlia implementation by default.
+
+## Browser layer
+
+Local CA/browser TLS is a compatibility layer; it is distinct from the network service-identity authentication.

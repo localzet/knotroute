@@ -1,7 +1,13 @@
 # Traefik + KnotRoute
 
-An application can be published through both an ordinary Traefik ingress and a KnotRoute sidecar:
+A single application can remain publicly available through Traefik while also being reachable through a KnotRoute sidecar.
 
 ```text
-Internet ─► Traefik ─► app:8080 ◄─ KnotRoute sidecar ◄─ overlay
+Internet → Traefik → app:8080 ← KnotRoute sidecar ← .knot clients
 ```
+
+Attach the application to both networks and the sidecar only to the private KnotRoute-facing network.
+
+Check application settings that generate canonical redirects, cookie domains, OAuth callbacks, CSP origins or WebSocket URLs; these can unintentionally redirect `.knot` users to the public hostname.
+
+Public TLS remains a Traefik/WebPKI concern. `.knot` browser TLS uses the client's local CA plus KnotRoute's independent service authentication.

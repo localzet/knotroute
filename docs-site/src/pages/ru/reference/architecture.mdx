@@ -1,0 +1,49 @@
+# Архитектура протокола
+
+Эта страница даёт техническую карту v3 без побайтового wire reference.
+
+## Peer layer
+
+Прямые peers устанавливают mutually authenticated transport. Node identity привязана к Ed25519 key pair; Network ID проверяется при handshake.
+
+## Topology и routing
+
+Nodes распространяют подписанные link-state advertisements. Routable edge принимается только когда topology подтверждает связь с обеих сторон.
+
+## Onion circuits
+
+Client строит telescopic circuit. Для каждого hop выполняется отдельный X25519 handshake и создаётся отдельный AEAD layer.
+
+Relay знает соседние circuit segments, а не обязан получать полный application path в одной команде.
+
+## Published service flow
+
+```text
+service
+  └─ reverse circuits → introduction points
+
+client
+  ├─ directory lookup → signed descriptor
+  ├─ circuit → rendezvous
+  └─ introduce request → introduction point
+
+service
+  └─ circuit → rendezvous
+
+client ⇄ rendezvous ⇄ service
+       end-to-end service session
+```
+
+## Directory
+
+Service descriptor подписан service identity и содержит Network ID, service ID, introduction points, revision и expiry. Descriptor реплицируется на несколько nodes по deterministic proximity rule.
+
+Это DHT-like distributed storage, но не следует автоматически называть текущую реализацию полной Kademlia.
+
+## Service E2E
+
+После rendezvous client и service выполняют X25519 exchange, authenticated service acknowledgment и получают независимые directional AEAD keys.
+
+## Browser layer
+
+Browser TLS/CA — локальный compatibility layer и не заменяет service identity authentication.

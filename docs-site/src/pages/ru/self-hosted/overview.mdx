@@ -1,27 +1,64 @@
-# Self-hosted: общая схема
+# Архитектура self-hosted развёртывания
 
-Рекомендуемый первый production-layout:
+KnotRoute разделён на **data plane** и **management plane**. Это ключ к нормальной эксплуатации.
+
+## Data plane
 
 ```text
-                  HTTPS                       TCP/7447
-clients ───────► Beacon A ─────────────────► Relay A
-   │             Beacon B ─────────────────► Relay B
-   │                    ╲                    ╱
-   └─────────────── encrypted overlay ──────┘
-                         │
-                    Sidecar / service
-
-Control ── management only ──► Agents ──► managed containers
+clients ─┬─ relays ─┬─ directory / rendezvous ── service hosts
+         │          │
+         └─ Beacon discovery/bootstrap
 ```
 
-## Минимальный порядок
+Сюда относятся node, Beacon relay, relays, circuits, directory и sidecars. Они должны продолжать работать без Control.
 
-1. Создайте отдельный `network_id`.
-2. Разверните минимум два Beacon endpoint в разных failure domains.
-3. Держите несколько постоянно доступных relay-node.
-4. Установите Control за HTTPS.
-5. Подключите Agents на Docker-хостах.
-6. Публикуйте приложения sidecar-контейнерами.
-7. Выдавайте пользователям QR/инструкцию из Control.
+## Management plane
 
-<Callout type="warning">`network_id` — namespace сети, а не пароль или membership certificate.</Callout>
+```text
+                 Control
+                /   |   \
+             Agent Agent Agent
+               |     |     |
+            Docker Docker Docker
+```
+
+Control хранит inventory, network profiles, jobs и onboarding information. Agent выполняет ограниченные management operations на конкретном host.
+
+## Рекомендуемый старт production-сети
+
+Минимальная практичная база:
+
+- отдельный non-default `network_id`;
+- 2+ Beacon endpoints;
+- несколько всегда доступных relays;
+- разные failure domains/VPS для bootstrap infrastructure;
+- HTTPS для Beacon HTTP API и Control;
+- persistent volumes для identities;
+- synthetic `.knot` monitor с внешнего клиента;
+- backup service identities.
+
+## Control не должен быть SPOF data plane
+
+Если Control недоступен:
+
+- existing peers остаются соединёнными;
+- circuits продолжают строиться;
+- Beacon/relays продолжают работать;
+- sidecars продолжают публиковать сервисы;
+- клиенты продолжают открывать `.knot`.
+
+Недоступны лишь новые management jobs, onboarding UI и централизованное наблюдение.
+
+## Выбор модели
+
+### Небольшая сеть
+
+Можно начать без Control: Beacon + несколько nodes + sidecars + ручные configs.
+
+### Несколько серверов
+
+Control + Agents существенно упрощают inventory, обновления и публикацию сервисов.
+
+### Большая сеть
+
+Не пытайтесь превращать Control в обязательный coordinator. Масштабируйте data plane независимо, а management plane рассматривайте как управленческий инструмент.

@@ -1,11 +1,23 @@
-# Self-hosted deployment
+# Self-hosted deployment architecture
 
-1. Generate a non-default `network_id`.
-2. Deploy at least two Beacon endpoints in independent failure domains.
-3. Maintain several stable relay nodes.
-4. Put Control behind HTTPS.
-5. Enroll Agents on Docker hosts.
-6. Publish applications with sidecars.
-7. Generate client onboarding from Control.
+KnotRoute separates the **data plane** from the **management plane**.
 
-<Callout type="warning">A network ID separates overlays; it is not a membership password.</Callout>
+## Data plane
+
+Nodes, relays, Beacon bootstrap, circuits, distributed descriptors, rendezvous and sidecars carry or enable actual overlay traffic.
+
+## Management plane
+
+Control and Agents provide inventory, deployments, onboarding and operational visibility. Existing data-plane traffic must continue if Control is unavailable.
+
+## Production baseline
+
+A practical starting point is a non-default Network ID, 2+ Beacon endpoints, several stable relays across independent hosts, HTTPS for Beacon/Control, persistent identity volumes, service-identity backups and an external synthetic `.knot` check.
+
+## Small deployments
+
+Control is optional. A small network can use manual configuration, Beacons and sidecars directly.
+
+## Larger deployments
+
+Control + Agents reduce configuration drift and make deployment/onboarding repeatable without becoming mandatory traffic coordinators.

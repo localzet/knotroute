@@ -1,0 +1,19 @@
+# CLI reference
+
+Common workflows:
+
+```bash
+knotroute init --config knotroute.json
+knotroute run --config knotroute.json
+knotroute doctor --config knotroute.json --probe
+knotroute id --config knotroute.json
+knotroute address --config knotroute.json
+knotroute resolve --config knotroute.json example.knot
+knotroute network create
+knotroute invite export --config knotroute.json --out network.knotinvite
+knotroute invite import --config knotroute.json --file network.knotinvite
+knotroute ca path --config knotroute.json
+knotroute version
+```
+
+Use `knotroute <command> --help` from the exact binary release for authoritative flags.

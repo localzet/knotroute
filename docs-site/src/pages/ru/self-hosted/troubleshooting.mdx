@@ -1,0 +1,61 @@
+# Troubleshooting серверов
+
+## Beacon отвечает health, но clients не подключаются
+
+Проверьте отдельно:
+
+- HTTPS URL Beacon;
+- Network ID;
+- relay advertise endpoint;
+- inbound `7447/tcp`;
+- NAT/firewall;
+- что advertised hostname резолвится из Internet.
+
+Health `8080` не гарантирует доступность raw relay `7447`.
+
+## Sidecar running, но адрес не открывается
+
+Проверьте logs:
+
+```bash
+docker compose logs --tail=200 knotroute
+```
+
+Затем local target из той же Docker network. Частая ошибка — `localhost:8080`: внутри sidecar `localhost` означает сам sidecar, а не соседний app container. Используйте service name вроде `app:8080`.
+
+## Agent offline
+
+Проверьте:
+
+- `KNOTROUTE_CONTROL_URL`;
+- TLS/DNS до Control;
+- persistent `/data`;
+- системное время;
+- enrollment token только при первом enrollment;
+- logs Agent.
+
+## Job failed: Docker disabled
+
+Agent должен иметь:
+
+```text
+KNOTROUTE_AGENT_DOCKER=true
+```
+
+и Docker socket mount. Если вы намеренно запретили Docker management, такой failure ожидаем.
+
+## Job создал container, но service unreachable
+
+Разделите проблему:
+
+1. container running?
+2. sidecar health?
+3. target доступен из sidecar network?
+4. sidecar connected to peers?
+5. descriptor опубликован?
+6. client может найти descriptor?
+7. rendezvous строится?
+
+## `.knot` address неожиданно изменился
+
+Почти всегда это означает новую service identity. Проверьте, не был ли удалён volume `/data`, изменён `identity_file` или развёрнут новый sidecar без старого state.

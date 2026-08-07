@@ -1,0 +1,93 @@
+# Первая сеть с нуля
+
+Эта инструкция рассчитана на администратора, который хочет развернуть самостоятельную KnotRoute network для нескольких клиентов и сервисов.
+
+## Что понадобится
+
+Рекомендуется:
+
+- 2 VPS с публичными IP/DNS для Beacon/relay;
+- домены `beacon-a.example.net`, `beacon-b.example.net`;
+- TLS reverse proxy для Beacon HTTP и Control;
+- 1 host для Control (может совпадать с одним VPS, но это не обязательно);
+- Docker/Compose на managed servers.
+
+## Шаг 1. Network ID
+
+```bash
+knotroute network create
+```
+
+Сохраните значение `kn_...` в password manager/config repository. Оно не является паролем, но это canonical identifier вашей overlay.
+
+## Шаг 2. Первый Beacon/relay
+
+Поднимите Beacon A с persistent `/data`, HTTPS front-end для `8080` и raw TCP `7447`.
+
+Проверьте:
+
+```bash
+curl -fsS https://beacon-a.example.net/healthz
+```
+
+## Шаг 3. Второй Beacon/relay
+
+Разверните его на другом host/provider. Используйте тот же Network ID, но отдельную node identity/volume.
+
+Клиентам отдавайте оба URL:
+
+```text
+https://beacon-a.example.net
+https://beacon-b.example.net
+```
+
+## Шаг 4. Дополнительные relays
+
+Добавьте несколько always-on KnotRoute nodes. Чем меньше стабильных узлов, тем меньше реальная route diversity, независимо от configured circuit hop count.
+
+## Шаг 5. Control
+
+Разверните `knotroute-control` за HTTPS и создайте сильные раздельные secrets:
+
+```text
+KNOTROUTE_CONTROL_ADMIN_PASSWORD
+KNOTROUTE_CONTROL_ENROLL_TOKEN
+```
+
+Добавьте network profile с вашим Network ID и Beacon URLs.
+
+## Шаг 6. Agents
+
+На каждом Docker host запустите Agent. Для первого enrollment ему нужен token. После enrollment Agent использует persistent Ed25519 identity.
+
+Docker socket монтируйте только тем Agents, которым действительно разрешён deployment workloads.
+
+## Шаг 7. Первый service
+
+Опубликуйте test app через sidecar и получите canonical `.knot` address.
+
+Сразу сделайте backup persistent sidecar data volume.
+
+## Шаг 8. Client onboarding
+
+Сгенерируйте в Control:
+
+- Windows instructions/invite;
+- Android QR/deep-link;
+- Linux proxy instructions;
+- raw profile для advanced users.
+
+## Шаг 9. End-to-end monitoring
+
+Поставьте отдельный client в другом failure domain и периодически открывайте test `.knot` service. Это полезнее, чем только `/healthz` самого Beacon.
+
+## Шаг 10. Зафиксируйте эксплуатационную политику
+
+Минимально документируйте:
+
+- кто имеет доступ к Control;
+- где хранятся service identity backups;
+- как добавляются relays;
+- как отзывается скомпрометированный host;
+- какой release channel используется;
+- кто получает alerts synthetic monitor.

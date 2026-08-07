@@ -1,5 +1,23 @@
-# Security model
+# Security
 
-KnotRoute v3 uses self-authenticating identities, hop-encrypted circuits and an additional end-to-end rendezvous stream layer.
+KnotRoute uses standard cryptographic primitives but does not claim Tor/I2P-grade anonymity.
 
-<Callout type="warning">Do not market v3 as Tor-equivalent anonymity. Traffic correlation, Sybil resistance, guard selection and global-adversary analysis require dedicated research and external review.</Callout>
+## Protected properties
+
+The design authenticates node/service identities, protects direct transports, provides per-hop circuit encryption and adds an end-to-end service layer over rendezvous sessions. Topology and service descriptors are signed.
+
+## Observable metadata
+
+Adjacent peer IPs, timing, traffic volume, frame sizes and role-specific protocol metadata may remain observable. Global traffic correlation is outside the guarantees of the current system.
+
+## Admission
+
+`network_id` is an overlay namespace, not a credential. Current v3 does not include a complete network-wide membership PKI/revocation system.
+
+## Published-service authorization
+
+Anonymous rendezvous hides the client's node identity from the service flow. Restricted services should authenticate at the application layer.
+
+## Control plane
+
+Use HTTPS, separate admin/enrollment secrets, and never mount the Docker socket into Control. Only deliberately privileged Agents should receive Docker access.

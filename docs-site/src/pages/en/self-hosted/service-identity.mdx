@@ -1,0 +1,19 @@
+# Service identity and migration
+
+A published service's canonical `.knot` address is derived from its private service identity, not from the host IP or node identity.
+
+## Migration
+
+1. Back up the service identity and configuration.
+2. Stop the old publisher.
+3. Transfer the identity securely to the new host.
+4. Change the local target as needed.
+5. Start the new publisher.
+6. Confirm the same canonical address in logs.
+7. Test remotely from another client.
+
+Avoid accidentally running unrelated publishers with copies of the same private service key.
+
+## Key compromise
+
+Current v3 has no global service-key revocation registry. If the key is compromised, create a new identity and distribute the replacement canonical address through a trusted channel.

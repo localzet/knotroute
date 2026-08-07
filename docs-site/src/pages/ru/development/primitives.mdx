@@ -1,0 +1,31 @@
+# Application primitives
+
+KnotRoute предоставляет не только raw streams. В проекте есть более высокоуровневые primitives, которые можно использовать в embedded applications.
+
+## RPC
+
+Request/response protocol с method и JSON body. Подходит для небольших internal control APIs, но не заменяет полноценный schema/versioning discipline вашего продукта.
+
+## DATAGRAM
+
+Текущий DATAGRAM primitive — **message-oriented framing поверх KnotRoute stream**, а не настоящий UDP/unreliable transport.
+
+Используйте его, когда приложению удобны независимые сообщения, но не делайте предположений о packet loss semantics UDP.
+
+## PUBSUB
+
+Topic использует secret-derived identifier; payload шифруется topic secret. Broker может маршрутизировать topic ciphertext, не зная plaintext payload.
+
+Продумайте distribution/rotation topic secrets отдельно.
+
+## OBJECT
+
+Content-addressed object ID основан на hash содержимого. File store проверяет integrity при чтении/записи.
+
+Подходит для immutable blobs, manifests и обмена content-addressed payloads.
+
+## Offline mailbox
+
+Mailbox использует recipient identity, ephemeral X25519 и authenticated encryption. Relay хранит encrypted envelopes, пока recipient не заберёт и не ACK'нет их.
+
+<Callout type="warning">Текущий mailbox primitive не является законченной anti-spam/anti-abuse системой. Для публичного сервиса понадобятся quotas, policy и abuse controls.</Callout>

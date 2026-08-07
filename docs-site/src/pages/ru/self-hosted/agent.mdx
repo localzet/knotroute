@@ -1,0 +1,68 @@
+# KnotRoute Agent
+
+Agent устанавливается на управляемый сервер и сам инициирует HTTPS-соединение к Control. Открывать отдельный inbound management port на host не требуется.
+
+## Compose
+
+```yaml
+services:
+  agent:
+    image: ghcr.io/localzet/knotroute-agent:latest
+    restart: unless-stopped
+    environment:
+      KNOTROUTE_CONTROL_URL: "https://control.example.net"
+      KNOTROUTE_CONTROL_ENROLL_TOKEN: "${KNOTROUTE_CONTROL_ENROLL_TOKEN}"
+      KNOTROUTE_AGENT_NAME: "prod-01"
+      KNOTROUTE_AGENT_TAGS: "production,eu"
+      KNOTROUTE_AGENT_DOCKER: "true"
+    volumes:
+      - agent-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  agent-data:
+```
+
+## Enrollment
+
+При первом старте Agent использует enrollment token, генерирует persistent identity и регистрирует public key в Control.
+
+После enrollment не удаляйте `agent-data`: иначе Agent станет новым management identity и потребует повторной регистрации.
+
+## Подпись запросов
+
+Heartbeat, получение jobs и отправка результатов подписываются Agent identity. Это защищает management API от простого подменённого клиента, даже если endpoint известен.
+
+## Docker mode
+
+`KNOTROUTE_AGENT_DOCKER=true` разрешает Agent выполнять поддерживаемые Docker deployment jobs.
+
+<Callout type="danger" title="Docker socket — высокий уровень доступа">Контейнер с `/var/run/docker.sock` фактически получает широкие административные возможности на host. Монтируйте socket только Agent'у, защищайте Control и не давайте этот mount `knotroute-control`.</Callout>
+
+Если Docker automation не нужен:
+
+```text
+KNOTROUTE_AGENT_DOCKER=false
+```
+
+и socket не монтируется.
+
+## Poll interval
+
+`KNOTROUTE_AGENT_POLL` задаёт интервал обращения к Control. Слишком маленькое значение увеличивает management traffic без заметной пользы.
+
+## Tags
+
+Используйте tags для классификации:
+
+```text
+production,eu,public-relay
+staging,internal
+home,nas
+```
+
+Не кладите в tags secrets.
+
+## Обновление Agent
+
+Agent можно обновлять обычным `docker compose pull && docker compose up -d`, сохраняя `/data`. После restart он продолжает использовать прежнюю identity.

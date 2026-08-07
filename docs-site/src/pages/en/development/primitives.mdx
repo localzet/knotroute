@@ -1,0 +1,23 @@
+# Application primitives
+
+## RPC
+
+Request/response framing with method and JSON body for lightweight internal APIs.
+
+## DATAGRAM
+
+Current DATAGRAM is message-oriented framing over reliable KnotRoute streams; it is not UDP semantics.
+
+## PUBSUB
+
+Topic identifiers are derived from topic secrets and payloads are encrypted. Design topic-secret distribution and rotation at the application layer.
+
+## OBJECT
+
+Content-addressed object storage validates object IDs against content hashes.
+
+## Offline mailbox
+
+The mailbox primitive encrypts envelopes to recipient identities and supports store/fetch/ack flows.
+
+<Callout type="warning">The mailbox primitive is not a complete anti-spam/abuse platform. Public deployments need quotas and policy.</Callout>

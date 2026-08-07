@@ -1,0 +1,37 @@
+# First network from scratch
+
+## 1. Generate a Network ID
+
+```bash
+knotroute network create
+```
+
+Store the `kn_...` identifier as canonical configuration for this overlay.
+
+## 2. Deploy two Beacons
+
+Place them on separate hosts when possible. Put the HTTP API behind HTTPS and expose the relay TCP endpoint separately.
+
+## 3. Add stable relays
+
+A configured multi-hop circuit cannot create path diversity that does not physically exist. Operate several stable nodes in independent failure domains.
+
+## 4. Deploy Control
+
+Use a strong admin password and a separate enrollment token. Publish Control only through HTTPS.
+
+## 5. Enroll Agents
+
+Install an Agent on each managed Docker host. Preserve its `/data` volume after enrollment.
+
+## 6. Publish a test service
+
+Deploy a sidecar and record its canonical `.knot` address. Back up the sidecar data volume immediately.
+
+## 7. Generate onboarding
+
+Provide Windows instructions/invites, Android QR/deep links, Linux proxy configuration, or raw settings as appropriate.
+
+## 8. Add synthetic monitoring
+
+Run a client from another failure domain and periodically open a known test service through the full overlay path.

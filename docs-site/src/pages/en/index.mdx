@@ -1,12 +1,49 @@
-# KnotRoute, without the pain
+# KnotRoute documentation
 
-KnotRoute is a self-hosted encrypted service overlay with `.knot` identities, multi-hop routing, hidden-service rendezvous and embeddable clients.
+KnotRoute is a self-hosted overlay network for services with cryptographic `.knot` identities, multi-hop circuits, distributed discovery, and embeddable clients.
+
+<Callout title="Start with a task">You do not need to learn the protocol first. Pick what you need to do: connect a client, publish a service, operate a network, or embed KnotRoute into an application.</Callout>
 
 <Cards>
-  <Card href="/en/client/windows" title="Open a .knot site">Install the desktop client, enable `.knot` integration and trust the local CA.</Card>
-  <Card href="/en/client/android" title="Connect from Android">Network profiles, deep links, embedded browser and local CA.</Card>
-  <Card href="/en/self-hosted/docker" title="Publish a Docker service">Run a sidecar next to an existing application without exposing its private port.</Card>
-  <Card href="/en/self-hosted/overview" title="Deploy your own network">Network ID, multiple Beacons, relays, Control and Agents.</Card>
+  <Card href="/en/getting-started/quickstart" title="Try it in 15 minutes">A minimal Beacon, client and first published service.</Card>
+  <Card href="/en/client/windows" title="Connect Windows">Desktop client, `.knot` proxy, local CA and diagnostics.</Card>
+  <Card href="/en/client/android" title="Connect Android">Network profiles, QR/deep-link onboarding and embedded browser.</Card>
+  <Card href="/en/self-hosted/docker" title="Publish a Docker service">Attach a sidecar without exposing the application port publicly.</Card>
+  <Card href="/en/self-hosted/first-network" title="Operate your own network">Network ID, Beacons, relays, Control, Agents and onboarding.</Card>
+  <Card href="/en/development/sdk" title="Embed KnotRoute">Go SDK and Android AAR without a separately installed client.</Card>
 </Cards>
 
-Control is a management plane only. The overlay, Beacons, relays and services continue to operate when Control is offline.
+## What KnotRoute solves
+
+A common case is an application that should remain private to a host or Docker network while being reachable by authorized application users through a KnotRoute service address.
+
+```text
+client
+  │ .knot
+  ▼
+KnotRoute client
+  │
+  └─ circuit ── relay ── rendezvous ── service ── app:8080
+```
+
+A published service has its own service identity, so its canonical address can survive a host migration when the private identity is preserved.
+
+## What KnotRoute does not replace
+
+KnotRoute is not a general-purpose VPN and does not provide public-Internet exit nodes. It also does not replace application authentication, firewalls, backups, or normal TLS for an ordinary public hostname.
+
+<Callout type="warning" title="Transport privacy is not authorization">`network_id` separates overlays but is not a password. Restricted published services still need application-layer authentication.</Callout>
+
+## Project components
+
+| Component | Purpose |
+| --- | --- |
+| `knotroute` | node/CLI, relay, local gateways and dashboard |
+| `knotroute-desktop` | Windows tray and system integration |
+| Android client | mobile core and `.knot` browser |
+| `knotroute-beacon` | peer discovery and optional bootstrap relay |
+| `knotroute-sidecar` | publish an existing TCP/Docker service |
+| `knotroute-control` | infrastructure management and onboarding |
+| `knotroute-agent` | outbound management agent on a Docker host |
+| `knotroute-docs` | this self-hosted documentation site |
+| Go SDK / Android AAR | application embedding |

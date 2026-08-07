@@ -1,0 +1,26 @@
+# Relay nodes
+
+A relay is a stable KnotRoute node that contributes routing capacity and path diversity.
+
+## Listen and advertise
+
+```json
+{
+  "listen": ["0.0.0.0:7447"],
+  "advertise": ["relay.example.net:7447"]
+}
+```
+
+Advertise only endpoints other peers can actually reach.
+
+## Firewall
+
+A public relay generally needs inbound `7447/tcp`. Dashboard and local proxies should remain loopback-only.
+
+## NAT
+
+An outbound-only node can still participate as a client, but it should not advertise an unreachable private or loopback address as a public relay.
+
+## Upgrades
+
+Use rolling upgrades for backbone nodes and confirm rejoin plus an external `.knot` request before moving to the next relay.

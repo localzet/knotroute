@@ -1,0 +1,75 @@
+# Проблемы подключения клиента
+
+Идите сверху вниз. Не начинайте с переустановки приложения — большинство проблем видно по тому, на каком слое прекращается цепочка.
+
+## 1. Работает ли local node
+
+```bash
+knotroute doctor --config knotroute.json
+```
+
+На desktop также откройте dashboard.
+
+## 2. Совпадает ли Network ID
+
+Клиент и сервис должны находиться в одной overlay-сети. Ошибка Network ID не исправляется добавлением новых proxy-настроек.
+
+## 3. Есть ли peers
+
+Если peers = 0:
+
+- проверьте Beacon URL;
+- firewall/outbound HTTPS;
+- статические seed peers;
+- peer cache;
+- системное время;
+- доступность bootstrap relay `7447/tcp`.
+
+## 4. Находится ли service descriptor
+
+Если peers/routes есть, но canonical service identity не открывается, проблема может быть в публикации descriptor или introduction points.
+
+На service host проверьте sidecar logs и факт `publishing ... as ...knot`.
+
+## 5. Работает ли local target
+
+На service host:
+
+```bash
+curl http://app:8080/
+```
+
+или эквивалентный check из sidecar Docker network.
+
+KnotRoute не сможет исправить недоступный upstream target.
+
+## 6. Proxy или browser
+
+Если raw KnotRoute работает, а browser нет:
+
+- проверьте PAC/system proxy;
+- для SOCKS включите remote hostname resolution;
+- проверьте CA для HTTPS;
+- отключите расширения, которые принудительно подменяют proxy/DNS;
+- проверьте, не пытается ли application redirect на public hostname.
+
+## 7. Другой VPN/TUN
+
+KnotRoute без TUN обычно может работать рядом с VPN. Но VPN/firewall может блокировать Beacon HTTPS или relay TCP. Проверьте доступ к этим endpoints обычными network tools.
+
+## 8. Что приложить к issue
+
+Полезный минимальный набор:
+
+```text
+OS / version
+KnotRoute version
+Network ID (если он не считается приватным в вашем deployment)
+количество peers/routes
+тип клиента
+Beacon URLs без секретов
+ошибка doctor --probe
+релевантные logs без private keys/tokens
+```
+
+<Callout type="danger">Никогда не публикуйте identity private files, Control passwords, enrollment tokens или local CA private key.</Callout>

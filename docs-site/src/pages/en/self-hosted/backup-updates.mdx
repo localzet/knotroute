@@ -1,0 +1,18 @@
+# Backups and upgrades
+
+Identity is state, not disposable cache.
+
+| Component | Preserve |
+| --- | --- |
+| Sidecar/service | `/data`, especially service identity |
+| Relay/node | node identity and configuration |
+| Beacon relay | persistent relay identity/data |
+| Agent | `/data` after enrollment |
+| Control | `/data` for inventory and registrations |
+| Client | profile/identity; CA if the same local trust root must be kept |
+
+## Rolling upgrades
+
+Upgrade one backbone node, verify health/rejoin and run an external `.knot` check before updating the next.
+
+Sidecars can normally be pulled/restarted while keeping the same persistent volume, preserving the service address.

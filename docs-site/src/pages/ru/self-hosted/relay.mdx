@@ -1,0 +1,48 @@
+# Relay nodes
+
+Relay — всегда доступный KnotRoute node, участвующий в topology и multi-hop circuits.
+
+## Когда нужен отдельный relay
+
+Beacon может одновременно быть relay, но для устойчивой сети полезны независимые relay nodes. Это уменьшает зависимость от bootstrap infrastructure и даёт больше вариантов маршрутов.
+
+## Listener и advertise
+
+Пример логики:
+
+```json
+{
+  "listen": ["0.0.0.0:7447"],
+  "advertise": ["relay-c.example.net:7447"]
+}
+```
+
+`listen` — local bind. `advertise` — endpoint, который должны реально суметь набрать другие peers.
+
+## NAT
+
+Если host за NAT и inbound port недоступен, он всё ещё может быть outbound client/node, но не стоит рекламировать приватный/loopback endpoint как публичный relay.
+
+## Firewall
+
+Для публичного relay обычно требуется inbound:
+
+```text
+7447/tcp
+```
+
+Dashboard/proxy ports оставляйте loopback-only.
+
+## Сколько relays
+
+Количество зависит от модели отказов и желаемой path diversity. Практический старт — несколько stable nodes в независимых failure domains.
+
+Configured `circuit_hops = 3` не создаст три независимых hops, если topology физически состоит из двух узлов.
+
+## Что видит relay
+
+Relay видит только данные, необходимые своей позиции в path: adjacent connections, timing/volume и protocol metadata своей роли. Это не означает защиту от глобального traffic analysis.
+
+## Обновления
+
+Обновляйте relays rolling-методом: один host → проверка rejoin/health → следующий. Не рестартуйте всю backbone одновременно без необходимости.

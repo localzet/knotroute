@@ -1,21 +1,44 @@
-# Publish a Docker service
+# Publishing a Docker service
+
+A sidecar publishes an existing application without changing the application itself.
+
+## Minimal pattern
 
 ```yaml
 services:
   app:
     image: example/app:latest
     networks: [private]
+
   knotroute:
     image: ghcr.io/localzet/knotroute-sidecar:latest
+    restart: unless-stopped
     networks: [private]
-    volumes: [knotroute-data:/data]
+    volumes:
+      - knotroute-data:/data
     environment:
       KNOTROUTE_NETWORK_ID: "kn_..."
       KNOTROUTE_BEACONS: "https://beacon-a.example,https://beacon-b.example"
       KNOTROUTE_SERVICE_NAME: "web"
       KNOTROUTE_SERVICE_TARGET: "app:8080"
+
+networks:
+  private:
+
 volumes:
   knotroute-data:
 ```
 
-Persist `/data`; it holds the service identity that determines the stable `.knot` address.
+The application needs no public host port if it is intended to be KnotRoute-only.
+
+## Persistent identity
+
+<Callout type="danger">Do not delete the sidecar `/data` volume. Losing the service identity creates a different canonical `.knot` address.</Callout>
+
+## Address discovery
+
+Read `docker compose logs knotroute`; the sidecar prints the published service address and target.
+
+## Health
+
+The sidecar exposes a health endpoint (commonly `:9090/healthz`) for process checks. Use a real remote `.knot` request for end-to-end monitoring.

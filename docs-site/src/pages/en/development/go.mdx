@@ -1,0 +1,26 @@
+# Go client/server SDK
+
+## Client
+
+```go
+client, err := knotclient.New(knotclient.Options{
+    DataDir:     "./knot-data",
+    NetworkID:   "kn_...",
+    Beacons:     []string{"https://beacon.example.net"},
+    CircuitHops: 3,
+})
+if err != nil { /* handle */ }
+
+if err := client.Start(ctx); err != nil { /* handle */ }
+defer client.Close()
+
+conn, err := client.Dial(ctx, "service-address.knot")
+```
+
+The SDK also provides HTTP-friendly dialing helpers.
+
+## Server
+
+`pkg/knotserver` can publish in-process handlers through an independent service identity, avoiding an extra externally exposed TCP listener when KnotRoute is embedded into a daemon/API.
+
+Use cancellable contexts and explicitly close clients/servers during shutdown.

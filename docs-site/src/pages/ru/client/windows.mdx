@@ -1,21 +1,71 @@
 # Windows-клиент
 
-## 1. Установите KnotRoute
+Windows release содержит CLI, desktop tray controller и Windows Service wrapper. Для обычного пользователя нужен `knotroute-desktop.exe`.
 
-Скачайте Windows x64/ARM64 archive из GitHub Releases и запустите `Install-KnotRoute.ps1`. Для обычной работы запускайте `knotroute-desktop.exe`.
+## Установка
 
-## 2. Добавьте сеть
-
-Проще всего получить параметры из KnotRoute Control: `network_id` и 2+ Beacon URL. CLI также поддерживает `.knotinvite`.
-
-## 3. Включите `.knot integration`
-
-Tray установит локальный KnotRoute Root CA в trust store текущего пользователя и PAC, который отправляет только `.knot` через локальный proxy.
-
-<Callout type="warning">Не отключайте TLS-проверки браузера. Если `.knot` HTTPS показывает certificate error — исправьте установку локального CA.</Callout>
-
-## 4. Проверьте соединение
+Распакуйте release archive и запустите installer script:
 
 ```powershell
-knotroute doctor --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json" --probe
+powershell -ExecutionPolicy Bypass -File .\Install-KnotRoute.ps1
 ```
+
+После установки запустите `knotroute-desktop.exe`.
+
+## Что делает tray application
+
+- запускает и останавливает локальный KnotRoute node;
+- открывает dashboard;
+- показывает состояние сети;
+- включает `.knot` system integration;
+- управляет автозапуском;
+- открывает configuration/log directory.
+
+## Подключение к сети
+
+Если у вас есть `.knotinvite`:
+
+```powershell
+knotroute init --config knotroute.json
+knotroute invite import --config knotroute.json --file network.knotinvite
+```
+
+Если профиль выдаёт Control, используйте данные Network ID и Beacon URLs из onboarding.
+
+## Browser integration
+
+KnotRoute не создаёт TUN по умолчанию. На Windows он может установить PAC script, который отправляет `.knot` в локальный HTTP proxy, а остальные hosts оставляет `DIRECT` с точки зрения KnotRoute.
+
+Это позволяет одновременно использовать Clash/FlClashX/VPN: обычный traffic продолжает идти по маршрутам ОС/VPN, а `.knot` обрабатывается application proxy.
+
+## HTTPS
+
+При включении интеграции KnotRoute предлагает установить **локальный** Root CA текущего пользователя. Он используется только для `.knot` browser certificates.
+
+<Callout type="warning">Не импортируйте Root CA, полученный от чужого KnotRoute-клиента. Каждый клиент должен использовать собственный локальный CA.</Callout>
+
+## Локальные endpoints
+
+Типичные значения:
+
+| Функция | Адрес |
+| --- | --- |
+| Dashboard | `127.0.0.1:8484` |
+| SOCKS5 | `127.0.0.1:9477` |
+| HTTP proxy | `127.0.0.1:9478` |
+| PAC | `http://127.0.0.1:8484/proxy.pac` |
+
+Точные значения могут быть изменены в config.
+
+## Диагностика
+
+```powershell
+knotroute doctor --config knotroute.json --probe
+knotroute address --config knotroute.json
+```
+
+В dashboard проверьте Network ID, peers, routes, circuits и последние события.
+
+## Когда использовать Windows Service
+
+Service wrapper полезен для unattended host или машины, где KnotRoute должен работать независимо от пользовательской сессии. Для обычного desktop-клиента tray application проще и понятнее.

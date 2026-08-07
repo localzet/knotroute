@@ -1,0 +1,13 @@
+# Ports and network flows
+
+| Port | Role | Typical exposure |
+| --- | --- | --- |
+| `7447/tcp` | peer/relay transport | public on a relay; not required on outbound-only clients |
+| `8080/tcp` | Beacon HTTP API | behind HTTPS reverse proxy |
+| `8080/tcp` | Control/docs container | behind reverse proxy |
+| `9090/tcp` | sidecar health | trusted/internal monitoring |
+| `8484/tcp` | dashboard | loopback |
+| `9477/tcp` | SOCKS5 | loopback |
+| `9478/tcp` | HTTP proxy | loopback |
+
+A Beacon deployment commonly uses public HTTPS `443 → beacon:8080` plus raw `7447/tcp` for the bundled relay.

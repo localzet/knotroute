@@ -1,0 +1,35 @@
+# Ограничения v3
+
+Эта страница специально перечисляет то, что KnotRoute пока **не обещает**.
+
+## Не Tor-equivalent anonymity
+
+Есть onion-style circuits и hidden-service-like rendezvous, но нет достаточного основания утверждать эквивалент Tor по защите от traffic analysis, Sybil attacks, guard design и глобального adversary.
+
+## Нет network-wide membership PKI
+
+Network ID отделяет overlays, но не является credential. Централизованной/распределённой схемы admission + revocation в текущей v3 нет.
+
+## Нет глобального human-readable registry
+
+Canonical identities криптографические. Friendly aliases локальны/внешни и не имеют встроенной глобальной uniqueness guarantee.
+
+## Нет Internet exit nodes
+
+KnotRoute предназначен для services внутри overlay, а не для проксирования произвольного публичного Internet traffic.
+
+## DATAGRAM не UDP
+
+Application DATAGRAM primitive сейчас message-oriented, но транспортируется поверх reliable stream semantics.
+
+## Mailbox не anti-spam platform
+
+Encrypted mailbox primitive нуждается в дополнительной abuse policy, quotas и operational controls для публичного масштабного использования.
+
+## Control single-admin model
+
+Текущий Control ориентирован на self-hosted admin и не является enterprise IAM/RBAC/OIDC системой. При multi-admin deployment добавьте внешнюю access boundary или дождитесь соответствующей функциональности.
+
+## Protocol maturity
+
+Не было многолетнего публичного криптографического аудита и adversarial deployment опыта. Используйте staged rollout, monitoring и defense in depth.

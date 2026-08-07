@@ -1,0 +1,52 @@
+# Бэкапы и обновления
+
+Главное правило: **identity — это состояние**, а не disposable cache.
+
+## Что бэкапить
+
+| Компонент | Критичное состояние |
+| --- | --- |
+| Sidecar/service | `/data`, особенно service identity |
+| Relay/node | node identity и config, если важна стабильность node ID |
+| Beacon relay | `/data` для стабильной relay identity |
+| Agent | `/data` для management identity/enrollment |
+| Control | `/data` для inventory/jobs/network profiles |
+| Client | identity/profile; local CA — если хотите сохранить именно этот trust root |
+
+## Что можно пересоздать
+
+Peer cache и некоторые runtime caches обычно не являются уникальным secret state. Но перед очисткой конкретного файла убедитесь, что это действительно cache в вашей версии.
+
+## Rolling update
+
+Для backbone:
+
+1. backup;
+2. обновить один Beacon/relay;
+3. проверить health/rejoin;
+4. выполнить synthetic `.knot` request;
+5. перейти к следующему node.
+
+Не обновляйте весь bootstrap/relay набор одновременно без причины.
+
+## Sidecar update
+
+```bash
+docker compose pull knotroute
+docker compose up -d knotroute
+```
+
+Persistent volume остаётся прежним, поэтому service identity и address сохраняются.
+
+## Control/Agent
+
+Обновляйте Control и Agents совместимыми версиями. Перед Control update сохраните `/data`.
+
+## Проверка после обновления
+
+- component version;
+- health endpoint;
+- peer count;
+- отсутствие reconnect storm;
+- canonical service address не изменился;
+- внешний `.knot` request проходит.

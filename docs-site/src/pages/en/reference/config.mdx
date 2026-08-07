@@ -1,0 +1,36 @@
+# `knotroute.json` configuration
+
+Use `knotroute doctor` against the exact release you deploy; schema evolves with releases.
+
+## Identity and network
+
+```json
+{
+  "version": 3,
+  "identity_file": "identity.json",
+  "network_id": "kn_..."
+}
+```
+
+## Listen and advertise
+
+```json
+{
+  "listen": ["0.0.0.0:7447"],
+  "advertise": ["relay.example.net:7447"]
+}
+```
+
+Advertise only externally reachable addresses.
+
+## Discovery
+
+Discovery can combine Beacon URLs, LAN multicast, peer exchange and a persistent peer cache.
+
+## Services
+
+A published service specifies a target, service identity file, introduction-point count and metadata. Restricted hidden services should enforce application-layer authentication.
+
+## Proxy/dashboard
+
+Keep local proxy and management endpoints on loopback unless a deliberate additional security boundary protects them.

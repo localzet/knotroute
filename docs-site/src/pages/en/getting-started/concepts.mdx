@@ -1,0 +1,45 @@
+# Core concepts
+
+## Network ID
+
+`network_id` identifies an independent KnotRoute overlay. Nodes using different IDs do not form one network. It is not a password or admission credential.
+
+## Node
+
+A node is a running KnotRoute instance with an Ed25519 identity. It may act as a client, relay, service host, or several roles at once.
+
+## Service identity
+
+A published service can have an identity independent of the hosting node. Its canonical address is derived from that service identity and can survive migrations.
+
+## Beacon
+
+A Beacon is an HTTP peer-discovery service. Nodes submit signed announcements and receive peer candidates. A Beacon is not a central `.knot` service registry.
+
+## Relay
+
+A relay is a KnotRoute node used as part of multi-hop circuits. Stable independent relays provide route diversity and improve availability.
+
+## Circuit
+
+A circuit is a multi-hop path with a separate cryptographic layer for each hop. It is created for KnotRoute traffic rather than acting as an OS-wide VPN tunnel.
+
+## Directory descriptor
+
+Published services create signed descriptors containing service identity information and introduction points. Descriptors are replicated across the distributed directory layer.
+
+## Introduction and rendezvous
+
+A service maintains reverse circuits to introduction points. A client learns them from a descriptor, chooses a rendezvous point, and asks the service to meet there. The hosting node's direct address does not need to be the service's public identity.
+
+## Sidecar
+
+A sidecar publishes an existing target such as `app:8080` without requiring the application to implement KnotRoute.
+
+## Control and Agent
+
+Control and Agent form an optional management plane. They manage inventory, deployments and onboarding but are not required for existing data-plane traffic.
+
+## Local CA
+
+A client can create a local CA for browser-compatible `https://*.knot`. Remote service authentication remains a separate KnotRoute service-identity mechanism.

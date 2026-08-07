@@ -1,0 +1,40 @@
+# Service identity и миграция
+
+Canonical `.knot` address опубликованного сервиса определяется его private service identity, а не IP, hostname или node identity.
+
+## Почему это важно
+
+Вы можете перенести приложение:
+
+```text
+server A → server B
+```
+
+и сохранить тот же `.knot` address, если перенесёте identity безопасно.
+
+## Что нужно бэкапить
+
+Для sidecar обычно достаточно сохранить persistent `/data`; внутри него находятся generated config/identity files.
+
+Для native config явно сохраните service `identity_file`.
+
+## Процедура миграции
+
+<Steps>
+  <Step title="Сделайте backup">Скопируйте service identity и config в защищённое хранилище.</Step>
+  <Step title="Остановите старый publisher">Избегайте двух случайных независимых publishers с копией одного private key.</Step>
+  <Step title="Перенесите identity">Передайте файл/volume на новый host защищённым способом.</Step>
+  <Step title="Измените target">Укажите новый local/Docker endpoint приложения.</Step>
+  <Step title="Запустите sidecar">Проверьте, что logs показывают тот же canonical `.knot` address.</Step>
+  <Step title="Проверьте извне">С другого KnotRoute client выполните реальный request.</Step>
+</Steps>
+
+## Компрометация private key
+
+Если service private identity украдена, злоумышленник потенциально способен выдавать себя за этот service identity. Текущая v3 не имеет глобального service-key revocation registry.
+
+Практический response: остановить старую публикацию, создать новую identity, распространить новый canonical address через trusted channel.
+
+## Не путайте с local CA
+
+Service identity — сетевой ключ сервиса. Local CA — browser compatibility key конкретного клиента. Это разные secrets с разными threat boundaries.

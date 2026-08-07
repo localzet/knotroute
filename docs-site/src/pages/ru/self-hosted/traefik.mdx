@@ -1,9 +1,73 @@
 # Traefik + KnotRoute
 
-Один контейнер приложения может одновременно иметь публичный ingress и приватную публикацию через KnotRoute.
+KnotRoute не требует заменить существующий публичный ingress. Один application container может одновременно быть доступен через обычный HTTPS и через `.knot`.
+
+## Схема
 
 ```text
-Internet ─► Traefik ─► app:8080 ◄─ KnotRoute sidecar ◄─ overlay
+Internet
+   │
+Traefik ───────► app:8080
+                   ▲
+                   │ private Docker network
+                   │
+KnotRoute sidecar ─┘
+   ▲
+   │ overlay
+.knot clients
 ```
 
-Подключите приложение к двум сетям: существующей Traefik network и отдельной private network с sidecar. Sidecar обращается к внутреннему HTTP-порту приложения; публичный TLS и `.knot` browser TLS — разные слои.
+## Compose pattern
+
+```yaml
+services:
+  app:
+    image: example/app:latest
+    networks:
+      - proxy
+      - knot
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`app.example.net`)"
+
+  knotroute:
+    image: ghcr.io/localzet/knotroute-sidecar:latest
+    restart: unless-stopped
+    networks:
+      - knot
+    volumes:
+      - knotroute-data:/data
+    environment:
+      KNOTROUTE_NETWORK_ID: "kn_..."
+      KNOTROUTE_BEACONS: "https://beacon-a.example.net,https://beacon-b.example.net"
+      KNOTROUTE_SERVICE_NAME: "web"
+      KNOTROUTE_SERVICE_TARGET: "app:8080"
+
+networks:
+  proxy:
+    external: true
+  knot:
+    internal: true
+
+volumes:
+  knotroute-data:
+```
+
+Sidecar не нужно подключать к public `proxy` network, если ему требуется только доступ к `app`.
+
+## Absolute URLs и redirects
+
+Некоторые frameworks генерируют абсолютные URLs из configured external hostname. Если пользователи должны работать и через `.knot`, проверьте:
+
+- trusted proxy settings;
+- canonical URL redirects;
+- cookie domains;
+- OAuth callback URLs;
+- CSP origins;
+- WebSocket URLs.
+
+Иначе приложение само может перенаправить `.knot` пользователя на public domain.
+
+## TLS
+
+Public path использует обычный WebPKI/TLS на Traefik. `.knot` path использует локальный client CA для browser compatibility и отдельную KnotRoute service authentication внутри overlay.

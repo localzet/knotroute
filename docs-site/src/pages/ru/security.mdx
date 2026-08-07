@@ -1,13 +1,56 @@
 # Безопасность
 
-KnotRoute v3 использует self-authenticating node/service identities, hop-encrypted circuits и дополнительное end-to-end шифрование rendezvous stream.
+KnotRoute использует стандартные криптографические primitives, но проект не заявляет Tor/I2P-grade anonymity.
 
-<Callout type="warning">Проект не должен позиционироваться как доказанная анонимность уровня Tor/I2P. Traffic correlation, Sybil resistance, guard design и глобальный наблюдатель требуют отдельного анализа и внешнего аудита.</Callout>
+## Что защищается
 
-## Важные границы
+- аутентификация node/service identities;
+- transport между direct peers;
+- onion-style per-hop circuit encryption;
+- дополнительное service end-to-end encryption через rendezvous;
+- signed topology/descriptor records;
+- payload integrity и replay/sequence controls в соответствующих слоях.
 
-- `network_id` не является admission credential.
-- Control не участвует в data plane.
-- Beacon не является каталогом `.knot`-сервисов.
-- Restricted hidden services должны использовать application-layer authentication.
-- Service identity и Control/Agent keys — production secrets.
+## Что остаётся наблюдаемым
+
+В зависимости от роли/топологии участник может наблюдать:
+
+- IP адрес непосредственного peer;
+- timing;
+- объём traffic;
+- размер/частоту packets/frames;
+- свою позицию в path;
+- protocol metadata, необходимую этой роли.
+
+Глобальный наблюдатель может пытаться коррелировать traffic.
+
+## Network admission
+
+`network_id` — namespace isolation, не password. В v3 нет полноценной network-wide membership PKI/revocation authority.
+
+Если deployment требует строгого допуска nodes, не считайте неизвестность Network ID достаточной защитой.
+
+## Published service access
+
+Anonymous rendezvous deliberately скрывает client node identity от service flow. Поэтому для закрытого published service используйте application-layer authentication.
+
+## Control plane
+
+Control должен быть только HTTPS. Enrollment token и admin password — разные secrets. Docker socket монтируется Agent'у только при необходимости и никогда Control.
+
+## Key handling
+
+Private:
+
+- node identity;
+- service identity;
+- Agent identity;
+- Control secrets;
+- local CA private key;
+- application secrets.
+
+Публичные service/node addresses сами по себе secret keys не содержат.
+
+## Threat boundary
+
+<Callout type="warning">Не используйте KnotRoute как единственную защиту в сценариях, где безопасность человека зависит от устойчивой анонимности против глобального или хорошо ресурсированного противника.</Callout>

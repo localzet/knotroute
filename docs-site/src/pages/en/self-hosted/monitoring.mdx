@@ -1,0 +1,19 @@
+# Monitoring
+
+Use three layers of checks.
+
+## Process health
+
+Check Beacon `/healthz`, sidecar health and container/process state.
+
+## Overlay health
+
+Track peer count, routes, circuit failures, descriptor lookup/publish errors, reconnect loops and version skew.
+
+## End-to-end health
+
+Run a synthetic KnotRoute client in another failure domain and request a known `.knot` service. This covers discovery, routing, directory and rendezvous rather than just one process.
+
+## Management health
+
+Agent heartbeat and job status help operate the fleet, but an offline Agent does not necessarily mean the underlying data plane is offline.

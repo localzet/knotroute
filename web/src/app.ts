@@ -39,6 +39,24 @@ const duration = (seconds: number) => { const n = Math.max(0, Math.floor(seconds
 const esc = (value: unknown) => String(value ?? "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c] ?? c));
 const lines = (value: string) => value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 const csv = (value: string) => value.split(",").map(x => x.trim()).filter(Boolean);
+const asArray = <T = any>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+const asObject = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+
+function normalizeStatus(value: unknown): Status {
+  const raw = asObject(value);
+  const proxy = asObject(raw.proxy);
+  return {
+    ...raw,
+    listen: asArray<string>(raw.listen),
+    peers: asArray<any>(raw.peers).map(p => ({ ...asObject(p), advertise: asArray<string>(asObject(p).advertise) })),
+    routes: asArray<any>(raw.routes).map(r => ({ ...asObject(r), path: asArray<string>(asObject(r).path), services: asArray<string>(asObject(r).services) })),
+    services: asArray<any>(raw.services).map(service => ({ ...asObject(service), introduction_points: asArray<string>(asObject(service).introduction_points) })),
+    forwards: asArray<any>(raw.forwards),
+    aliases: asArray<any>(raw.aliases),
+    events: asArray<any>(raw.events),
+    proxy: { ...proxy, listeners: asArray<string>(proxy.listeners) },
+  };
+}
 
 function setSaveState(message: string, state = "") {
   const bar = document.querySelector<HTMLElement>(".savebar");
@@ -101,10 +119,11 @@ function renderStatus(s: Status) {
   byId("healthText").textContent = s.peers.length ? "Сеть подключена" : "Узел работает · нет пиров";
 }
 async function refresh() {
+  let payload: unknown;
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
-    renderStatus(await response.json());
+    payload = await response.json();
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const health = document.querySelector<HTMLElement>(".health");
@@ -117,7 +136,27 @@ async function refresh() {
     renderEvents([...previous, {
       time: new Date().toISOString(),
       level: "error",
-      message: `Панель не может получить /api/status: ${detail}. Если страница уже была открыта, knotroute.exe мог завершиться. Проверьте %LOCALAPPDATA%\\KnotRoute\\knotroute.log и desktop.log.`,
+      message: `Панель не может получить /api/status: ${detail}. Проверьте %LOCALAPPDATA%\\KnotRoute\\knotroute.log и desktop.log.`,
+    }]);
+    return;
+  }
+
+  try {
+    renderStatus(normalizeStatus(payload));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const status = normalizeStatus(payload);
+    lastStatus = status;
+    const health = document.querySelector<HTMLElement>(".health");
+    if (health) {
+      health.className = "health offline";
+      health.title = `Узел отвечает, но панель не смогла отобразить status: ${detail}`;
+    }
+    byId("healthText").textContent = "Узел отвечает · ошибка интерфейса";
+    renderEvents([...status.events, {
+      time: new Date().toISOString(),
+      level: "error",
+      message: `Ошибка отображения /api/status: ${detail}. Это ошибка панели, а не признак завершения knotroute.exe.`,
     }]);
   }
 }

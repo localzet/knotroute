@@ -636,8 +636,8 @@ func (n *Node) addEvent(level, message string) {
 }
 
 func (n *Node) Status() Status {
-	status := Status{Name: "KnotRoute", Version: Version, NetworkID: n.network.String(), NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: n.Addresses(), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
-	status.Proxy = ProxyStatus{SOCKS: n.cfg.Proxy.SOCKS, HTTP: n.cfg.Proxy.HTTP, Direct: n.cfg.Proxy.Direct, Listeners: append([]string(nil), n.proxyAddresses...)}
+	status := Status{Name: "KnotRoute", Version: Version, NetworkID: n.network.String(), NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: append([]string{}, n.Addresses()...), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
+	status.Proxy = ProxyStatus{SOCKS: n.cfg.Proxy.SOCKS, HTTP: n.cfg.Proxy.HTTP, Direct: n.cfg.Proxy.Direct, Listeners: append([]string{}, n.proxyAddresses...)}
 	for _, address := range n.proxyAddresses {
 		if strings.HasPrefix(address, "socks5://") {
 			status.Proxy.SOCKS = strings.TrimPrefix(address, "socks5://")
@@ -655,13 +655,13 @@ func (n *Node) Status() Status {
 		if p.outbound {
 			direction = "outbound"
 		}
-		status.Peers = append(status.Peers, PeerStatus{ID: p.id.String(), ShortID: p.id.Short(), Direction: direction, RemoteAddr: p.remoteAddr, Advertise: append([]string(nil), p.advertise...)})
+		status.Peers = append(status.Peers, PeerStatus{ID: p.id.String(), ShortID: p.id.Short(), Direction: direction, RemoteAddr: p.remoteAddr, Advertise: append([]string{}, p.advertise...)})
 	}
 	n.peersMu.RUnlock()
 	sort.Slice(status.Peers, func(i, j int) bool { return status.Peers[i].ID < status.Peers[j].ID })
 	n.topologyMu.RLock()
 	for dest, route := range n.routes {
-		r := RouteStatus{Destination: dest.String(), Domain: naming.CanonicalDomain(dest), ShortID: dest.Short(), NextHop: route.NextHop.String(), Hops: route.Hops}
+		r := RouteStatus{Destination: dest.String(), Domain: naming.CanonicalDomain(dest), ShortID: dest.Short(), NextHop: route.NextHop.String(), Hops: route.Hops, Path: []string{}, Services: []string{}}
 		for _, id := range route.Path {
 			r.Path = append(r.Path, id.String())
 		}
@@ -681,7 +681,7 @@ func (n *Node) Status() Status {
 	})
 	domains := n.serviceDomains()
 	for _, s := range n.cfg.Services {
-		entry := ServiceStatus{Name: s.Name, Target: s.Target, Description: s.Description, Published: s.Publish, Domain: domains[s.Name]}
+		entry := ServiceStatus{Name: s.Name, Target: s.Target, Description: s.Description, Published: s.Publish, Domain: domains[s.Name], Introduction: []string{}}
 		if s.Publish {
 			n.directory.mu.RLock()
 			pub := n.directory.local[s.Name]
@@ -723,7 +723,7 @@ func (n *Node) Status() Status {
 	status.Descriptors = len(n.directory.descriptors)
 	n.directory.mu.RUnlock()
 	n.eventsMu.RLock()
-	status.Events = append([]Event(nil), n.events...)
+	status.Events = append([]Event{}, n.events...)
 	n.eventsMu.RUnlock()
 	return status
 }

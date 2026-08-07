@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,15 +29,19 @@ const (
 	wmLButtonDblClk = 0x0203
 	wmAppTray       = 0x8001
 	wmClose         = 0x0010
+	wmNull          = 0x0000
+	wmContextMenu   = 0x007B
 
 	nimAdd         = 0x00000000
 	nimModify      = 0x00000001
 	nimDelete      = 0x00000002
+	nimSetFocus    = 0x00000003
 	nimSetVersion  = 0x00000004
 	nifMessage     = 0x00000001
 	nifIcon        = 0x00000002
 	nifTip         = 0x00000004
 	nifInfo        = 0x00000010
+	nifShowTip     = 0x00000080
 	notifyVersion4 = 4
 	niifInfo       = 0x00000001
 	niifWarning    = 0x00000002
@@ -70,6 +76,7 @@ const (
 	cmdIntegration = 1006
 	cmdStartup     = 1007
 	cmdFolder      = 1008
+	cmdDiagnostics = 1009
 	cmdExit        = 1099
 )
 
@@ -79,29 +86,30 @@ var (
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 	wininet  = syscall.NewLazyDLL("wininet.dll")
 
-	procRegisterClassExW    = user32.NewProc("RegisterClassExW")
-	procCreateWindowExW     = user32.NewProc("CreateWindowExW")
-	procDefWindowProcW      = user32.NewProc("DefWindowProcW")
-	procGetMessageW         = user32.NewProc("GetMessageW")
-	procTranslateMessage    = user32.NewProc("TranslateMessage")
-	procDispatchMessageW    = user32.NewProc("DispatchMessageW")
-	procPostQuitMessage     = user32.NewProc("PostQuitMessage")
-	procLoadIconW           = user32.NewProc("LoadIconW")
-	procCreateIcon          = user32.NewProc("CreateIcon")
-	procDestroyIcon         = user32.NewProc("DestroyIcon")
-	procLoadCursorW         = user32.NewProc("LoadCursorW")
-	procCreatePopupMenu     = user32.NewProc("CreatePopupMenu")
-	procAppendMenuW         = user32.NewProc("AppendMenuW")
-	procTrackPopupMenu      = user32.NewProc("TrackPopupMenu")
-	procDestroyMenu         = user32.NewProc("DestroyMenu")
-	procGetCursorPos        = user32.NewProc("GetCursorPos")
-	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
-	procPostMessageW        = user32.NewProc("PostMessageW")
-	procMessageBoxW         = user32.NewProc("MessageBoxW")
-	procOpenClipboard       = user32.NewProc("OpenClipboard")
-	procEmptyClipboard      = user32.NewProc("EmptyClipboard")
-	procSetClipboardData    = user32.NewProc("SetClipboardData")
-	procCloseClipboard      = user32.NewProc("CloseClipboard")
+	procRegisterClassExW       = user32.NewProc("RegisterClassExW")
+	procRegisterWindowMessageW = user32.NewProc("RegisterWindowMessageW")
+	procCreateWindowExW        = user32.NewProc("CreateWindowExW")
+	procDefWindowProcW         = user32.NewProc("DefWindowProcW")
+	procGetMessageW            = user32.NewProc("GetMessageW")
+	procTranslateMessage       = user32.NewProc("TranslateMessage")
+	procDispatchMessageW       = user32.NewProc("DispatchMessageW")
+	procPostQuitMessage        = user32.NewProc("PostQuitMessage")
+	procLoadIconW              = user32.NewProc("LoadIconW")
+	procCreateIcon             = user32.NewProc("CreateIcon")
+	procDestroyIcon            = user32.NewProc("DestroyIcon")
+	procLoadCursorW            = user32.NewProc("LoadCursorW")
+	procCreatePopupMenu        = user32.NewProc("CreatePopupMenu")
+	procAppendMenuW            = user32.NewProc("AppendMenuW")
+	procTrackPopupMenu         = user32.NewProc("TrackPopupMenu")
+	procDestroyMenu            = user32.NewProc("DestroyMenu")
+	procGetCursorPos           = user32.NewProc("GetCursorPos")
+	procSetForegroundWindow    = user32.NewProc("SetForegroundWindow")
+	procPostMessageW           = user32.NewProc("PostMessageW")
+	procMessageBoxW            = user32.NewProc("MessageBoxW")
+	procOpenClipboard          = user32.NewProc("OpenClipboard")
+	procEmptyClipboard         = user32.NewProc("EmptyClipboard")
+	procSetClipboardData       = user32.NewProc("SetClipboardData")
+	procCloseClipboard         = user32.NewProc("CloseClipboard")
 
 	procShellNotifyIconW         = shell32.NewProc("Shell_NotifyIconW")
 	procShellExecuteW            = shell32.NewProc("ShellExecuteW")
@@ -187,12 +195,26 @@ type desktopApp struct {
 	configPath    string
 	daemonPath    string
 	dashboardURL  string
+	lastHealthErr string
+	menuOpen      bool
+	integration   bool
+	startup       bool
+	desktopLog    *os.File
 	quit          chan struct{}
 }
 
-var app *desktopApp
+var (
+	app                   *desktopApp
+	taskbarCreatedMessage uint32
+)
 
 func runDesktop() {
+	// HWND ownership and its message queue are thread-affine on Windows. Keep the
+	// window creation, message pump, and tray context-menu handling on one OS
+	// thread for the complete lifetime of the desktop controller.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	if !acquireSingleInstance() {
 		return
 	}
@@ -219,6 +241,7 @@ func runDesktop() {
 	}
 	close(instance.quit)
 	instance.removeTray()
+	instance.logf("desktop controller stopped")
 }
 
 func newDesktopApp() (*desktopApp, error) {
@@ -234,6 +257,10 @@ func newDesktopApp() (*desktopApp, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, err
 	}
+	desktopLog, err := os.OpenFile(filepath.Join(dataDir, "desktop.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open desktop log: %w", err)
+	}
 	daemon := filepath.Join(filepath.Dir(exe), "knotroute.exe")
 	if _, err := os.Stat(daemon); err != nil {
 		return nil, fmt.Errorf(dt("knotroute.exe was not found next to the desktop controller: %w", "knotroute.exe не найден рядом с приложением KnotRoute Desktop: %w"), err)
@@ -246,8 +273,11 @@ func newDesktopApp() (*desktopApp, error) {
 			return nil, fmt.Errorf(dt("initialize KnotRoute: %v: %s", "не удалось инициализировать KnotRoute: %v: %s"), runErr, bytes.TrimSpace(output))
 		}
 	}
-	a := &desktopApp{dataDir: dataDir, configPath: configPath, daemonPath: daemon, quit: make(chan struct{})}
+	a := &desktopApp{dataDir: dataDir, configPath: configPath, daemonPath: daemon, desktopLog: desktopLog, quit: make(chan struct{})}
 	a.reloadDashboardURL()
+	a.integration = a.readIntegrationEnabled()
+	a.startup = a.readStartupEnabled()
+	a.logf("desktop controller starting; config=%s daemon=%s", a.configPath, a.daemonPath)
 	return a, nil
 }
 
@@ -261,21 +291,38 @@ func acquireSingleInstance() bool {
 }
 
 func (a *desktopApp) reloadDashboardURL() {
-	a.dashboardURL = "http://127.0.0.1:8484"
+	next := "http://127.0.0.1:8484"
 	data, err := os.ReadFile(a.configPath)
-	if err != nil {
-		return
-	}
-	var cfg diskConfig
-	if json.Unmarshal(data, &cfg) == nil && cfg.Dashboard != "" {
-		host, port, splitErr := net.SplitHostPort(cfg.Dashboard)
-		if splitErr == nil {
-			if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
-				host = "127.0.0.1"
+	if err == nil {
+		var cfg diskConfig
+		if json.Unmarshal(data, &cfg) == nil && cfg.Dashboard != "" {
+			host, port, splitErr := net.SplitHostPort(cfg.Dashboard)
+			if splitErr == nil {
+				if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+					host = "127.0.0.1"
+				}
+				next = "http://" + net.JoinHostPort(host, port)
 			}
-			a.dashboardURL = "http://" + net.JoinHostPort(host, port)
 		}
 	}
+	a.mu.Lock()
+	a.dashboardURL = next
+	a.mu.Unlock()
+}
+
+func (a *desktopApp) dashboardAddress() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.dashboardURL
+}
+
+func (a *desktopApp) logf(format string, args ...any) {
+	if a == nil || a.desktopLog == nil {
+		return
+	}
+	line := fmt.Sprintf(format, args...)
+	_, _ = fmt.Fprintf(a.desktopLog, "%s %s\n", time.Now().Format(time.RFC3339Nano), line)
+	_ = a.desktopLog.Sync()
 }
 
 func (a *desktopApp) createWindowAndTray() error {
@@ -296,35 +343,64 @@ func (a *desktopApp) createWindowAndTray() error {
 		return fmt.Errorf("CreateWindowExW: %v", err)
 	}
 	a.hwnd, a.icon = hwnd, icon
-	a.nid = notifyIconData{CbSize: uint32(unsafe.Sizeof(notifyIconData{})), HWnd: hwnd, UID: 1, UFlags: nifMessage | nifIcon | nifTip, CallbackMessage: wmAppTray, Icon: icon}
+	a.nid = notifyIconData{CbSize: uint32(unsafe.Sizeof(notifyIconData{})), HWnd: hwnd, UID: 1, UFlags: nifMessage | nifIcon | nifTip | nifShowTip, CallbackMessage: wmAppTray, Icon: icon}
 	copyUTF16(a.nid.Tip[:], dt("KnotRoute · starting", "KnotRoute · запуск"))
-	if r, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&a.nid))); r == 0 {
-		return fmt.Errorf("Shell_NotifyIconW: %v", err)
+	taskbarCreatedName, _ := syscall.UTF16PtrFromString("TaskbarCreated")
+	if value, _, _ := procRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(taskbarCreatedName))); value != 0 {
+		taskbarCreatedMessage = uint32(value)
 	}
-	a.nid.TimeoutOrVersion = notifyVersion4
-	procShellNotifyIconW.Call(nimSetVersion, uintptr(unsafe.Pointer(&a.nid)))
+	return a.addTrayIcon()
+}
+
+func (a *desktopApp) addTrayIcon() error {
+	if r, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&a.nid))); r == 0 {
+		return fmt.Errorf("Shell_NotifyIconW(NIM_ADD): %v", err)
+	}
+	nid := a.nid
+	nid.TimeoutOrVersion = notifyVersion4
+	if r, _, err := procShellNotifyIconW.Call(nimSetVersion, uintptr(unsafe.Pointer(&nid))); r == 0 {
+		a.logf("Shell_NotifyIconW(NIM_SETVERSION) failed: %v", err)
+	}
+	a.logf("tray icon registered")
 	return nil
 }
 
-func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
+func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) (result uintptr) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			if app != nil {
+				app.logf("panic in windowProc msg=0x%x: %v\n%s", msg, recovered, debug.Stack())
 				app.balloon(dt("KnotRoute desktop error", "Ошибка KnotRoute Desktop"), fmt.Sprint(recovered), niifWarning)
 			}
+			result = 0
 		}
 	}()
 	if app == nil {
 		r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(msg), wParam, lParam)
 		return r
 	}
+	if taskbarCreatedMessage != 0 && msg == taskbarCreatedMessage {
+		app.logf("TaskbarCreated received; restoring tray icon")
+		if err := app.addTrayIcon(); err != nil {
+			app.logf("failed to restore tray icon: %v", err)
+		}
+		return 0
+	}
 	switch msg {
 	case wmAppTray:
 		event := uint32(lParam & 0xffff)
-		if event == wmRButtonUp {
-			app.showMenu()
+		iconID := uint16((lParam >> 16) & 0xffff)
+		if iconID != 0 && iconID != uint16(app.nid.UID) {
+			return 0
 		}
-		if event == wmLButtonDblClk {
+		switch event {
+		case wmRButtonUp, wmContextMenu:
+			// Under NOTIFYICON_VERSION_4 the shell packs anchor coordinates into
+			// wParam. Using those coordinates also supports keyboard invocation.
+			x := int32(int16(uint16(wParam & 0xffff)))
+			y := int32(int16(uint16((wParam >> 16) & 0xffff)))
+			app.showMenuAt(x, y)
+		case wmLButtonDblClk:
 			safeGo(app.openDashboard)
 		}
 		return 0
@@ -343,11 +419,27 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 	}
 }
 
-func (a *desktopApp) showMenu() {
+func (a *desktopApp) showMenuAt(x, y int32) {
 	a.mu.Lock()
+	if a.menuOpen {
+		a.mu.Unlock()
+		return
+	}
+	a.menuOpen = true
 	running, domain := a.running, a.domain
+	integration, startup := a.integration, a.startup
 	a.mu.Unlock()
-	menu, _, _ := procCreatePopupMenu.Call()
+	defer func() {
+		a.mu.Lock()
+		a.menuOpen = false
+		a.mu.Unlock()
+	}()
+
+	menu, _, createErr := procCreatePopupMenu.Call()
+	if menu == 0 {
+		a.logf("CreatePopupMenu failed: %v", createErr)
+		return
+	}
 	defer procDestroyMenu.Call(menu)
 	appendMenu(menu, mfString, cmdDashboard, dt("Open dashboard", "Открыть панель"))
 	appendMenu(menu, mfSeparator, 0, "")
@@ -367,25 +459,41 @@ func (a *desktopApp) showMenu() {
 	appendMenu(menu, copyFlags, cmdCopyDomain, dt("Copy .knot address", "Копировать .knot-адрес"))
 	appendMenu(menu, mfSeparator, 0, "")
 	integrationText := dt("Enable .knot system integration", "Включить системную интеграцию .knot")
-	if a.integrationEnabled() {
+	if integration {
 		integrationText = dt("Disable .knot system integration", "Отключить системную интеграцию .knot")
 	}
 	appendMenu(menu, mfString, cmdIntegration, integrationText)
 	startupText := dt("Start with Windows", "Запускать вместе с Windows")
-	if a.startupEnabled() {
+	if startup {
 		startupText = dt("Disable start with Windows", "Не запускать вместе с Windows")
 	}
 	appendMenu(menu, mfString, cmdStartup, startupText)
-	appendMenu(menu, mfString, cmdFolder, dt("Open data folder", "Открыть папку данных"))
+	appendMenu(menu, mfString, cmdFolder, dt("Open data and logs folder", "Открыть папку данных и журналов"))
+	appendMenu(menu, mfString, cmdDiagnostics, dt("Create diagnostics report", "Собрать диагностику"))
 	appendMenu(menu, mfSeparator, 0, "")
 	appendMenu(menu, mfString, cmdExit, dt("Exit tray (node keeps running)", "Закрыть трей (узел продолжит работу)"))
-	var p point
-	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
-	procSetForegroundWindow.Call(a.hwnd)
-	selected, _, _ := procTrackPopupMenu.Call(menu, tpmRightButton|tpmReturnCmd|tpmNonotify, uintptr(p.X), uintptr(p.Y), 0, a.hwnd, 0)
-	if selected != 0 {
-		procPostMessageW.Call(a.hwnd, wmCommand, selected, 0)
+
+	if x == 0 && y == 0 {
+		var p point
+		if r, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&p))); r != 0 {
+			x, y = p.X, p.Y
+		}
 	}
+	procSetForegroundWindow.Call(a.hwnd)
+	selected, _, trackErr := procTrackPopupMenu.Call(menu, tpmRightButton|tpmReturnCmd|tpmNonotify, uintptr(x), uintptr(y), 0, a.hwnd, 0)
+	// Microsoft explicitly requires a benign posted message after a tray popup
+	// menu so subsequent invocations do not immediately disappear. Restore the
+	// notification-area focus as well when the menu operation completes.
+	procPostMessageW.Call(a.hwnd, wmNull, 0, 0)
+	procShellNotifyIconW.Call(nimSetFocus, uintptr(unsafe.Pointer(&a.nid)))
+	if selected == 0 {
+		if trackErr != nil && trackErr != syscall.Errno(0) {
+			a.logf("TrackPopupMenu returned no selection: %v", trackErr)
+		}
+		return
+	}
+	a.logf("tray command selected: %d", selected)
+	safeGo(func() { a.handleCommand(uint16(selected & 0xffff)) })
 }
 
 func appendMenu(menu uintptr, flags uint32, id uint16, text string) {
@@ -413,25 +521,47 @@ func (a *desktopApp) handleCommand(command uint16) {
 			a.balloon(dt("Address copied", "Адрес скопирован"), domain, niifInfo)
 		}
 	case cmdIntegration:
-		if a.integrationEnabled() {
+		a.mu.Lock()
+		integration := a.integration
+		a.mu.Unlock()
+		if integration {
 			if err := a.disableIntegration(); err != nil {
 				messageBox(a.hwnd, "KnotRoute", err.Error(), mbOK|mbIconError)
 			} else {
+				a.mu.Lock()
+				a.integration = false
+				a.mu.Unlock()
 				a.balloon(dt("System integration disabled", "Системная интеграция отключена"), dt("Previous proxy script settings were restored.", "Предыдущие настройки proxy-скрипта восстановлены."), niifInfo)
 			}
 		} else if err := a.enableIntegration(); err != nil {
 			messageBox(a.hwnd, "KnotRoute", err.Error(), mbOK|mbIconError)
 		} else {
+			a.mu.Lock()
+			a.integration = true
+			a.mu.Unlock()
 			a.balloon(dt(".knot integration enabled", "Интеграция .knot включена"), dt("Windows now sends only .knot web traffic to KnotRoute.", "Windows теперь направляет в KnotRoute только веб-трафик .knot."), niifInfo)
 		}
 	case cmdStartup:
-		if a.startupEnabled() {
-			_ = a.setStartup(false)
+		a.mu.Lock()
+		startup := a.startup
+		a.mu.Unlock()
+		if err := a.setStartup(!startup); err != nil {
+			messageBox(a.hwnd, "KnotRoute", err.Error(), mbOK|mbIconError)
 		} else {
-			_ = a.setStartup(true)
+			a.mu.Lock()
+			a.startup = !startup
+			a.mu.Unlock()
 		}
 	case cmdFolder:
 		shellOpen(a.dataDir)
+	case cmdDiagnostics:
+		path, err := a.writeDiagnostics()
+		if err != nil {
+			messageBox(a.hwnd, "KnotRoute", err.Error(), mbOK|mbIconError)
+		} else {
+			a.balloon(dt("Diagnostics created", "Диагностика собрана"), path, niifInfo)
+			shellOpen(path)
+		}
 	case cmdExit:
 		procPostMessageW.Call(a.hwnd, wmClose, 0, 0)
 	}
@@ -472,7 +602,9 @@ func (a *desktopApp) startNode(notify bool) {
 	cmd := exec.Command(a.daemonPath, "run", "--config", a.configPath)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x00000200}
+	a.logf("starting node process: %s run --config %s", a.daemonPath, a.configPath)
 	if err := cmd.Start(); err != nil {
+		a.logf("node process failed to start: %v", err)
 		_ = logFile.Close()
 		if notify {
 			messageBox(a.hwnd, "KnotRoute", err.Error(), mbOK|mbIconError)
@@ -485,6 +617,7 @@ func (a *desktopApp) startNode(notify bool) {
 	a.mu.Unlock()
 	safeGo(func() {
 		waitErr := cmd.Wait()
+		a.logf("node process exited: %v", waitErr)
 		_ = logFile.Close()
 		a.mu.Lock()
 		intentional := a.stopping
@@ -530,13 +663,21 @@ func (a *desktopApp) startNode(notify bool) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	a.mu.Lock()
+	healthErr := a.lastHealthErr
+	a.mu.Unlock()
+	a.logf("node started but dashboard remained unavailable: %s", healthErr)
 	if notify {
-		a.balloon("KnotRoute", dt("The process started, but the dashboard is not reachable. Open the log from the data folder.", "Процесс запущен, но панель недоступна. Проверьте knotroute.log в папке данных."), niifWarning)
+		detail := dt("The process started, but the dashboard is not reachable. Open knotroute.log and desktop.log from the data folder.", "Процесс запущен, но локальный API панели недоступен. Проверьте knotroute.log и desktop.log в папке данных.")
+		if healthErr != "" {
+			detail += "\n\n" + healthErr
+		}
+		a.balloon("KnotRoute", detail, niifWarning)
 	}
 }
 
 func (a *desktopApp) validateNodeFiles() error {
-	cmd := exec.Command(a.daemonPath, "id", "--config", a.configPath)
+	cmd := exec.Command(a.daemonPath, "doctor", "--config", a.configPath)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	output, err := cmd.CombinedOutput()
 	if err == nil {
@@ -546,7 +687,7 @@ func (a *desktopApp) validateNodeFiles() error {
 	if detail == "" {
 		detail = err.Error()
 	}
-	return fmt.Errorf(dt("The node configuration or identity is invalid: %s", "Конфигурация или идентичность узла некорректна: %s"), detail)
+	return fmt.Errorf(dt("The node preflight failed: %s", "Предварительная проверка узла не пройдена: %s"), detail)
 }
 
 func (a *desktopApp) stopNode(notify bool) {
@@ -556,7 +697,7 @@ func (a *desktopApp) stopNode(notify bool) {
 	a.mu.Unlock()
 
 	client := &http.Client{Timeout: 2 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost, a.dashboardURL+"/api/shutdown", strings.NewReader("{}"))
+	req, _ := http.NewRequest(http.MethodPost, a.dashboardAddress()+"/api/shutdown", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
 	response, requestErr := client.Do(req)
 	if requestErr == nil {
@@ -615,22 +756,33 @@ func (a *desktopApp) stopNode(notify bool) {
 }
 
 func (a *desktopApp) health() bool {
-	client := &http.Client{Timeout: 700 * time.Millisecond}
-	response, err := client.Get(a.dashboardURL + "/api/status")
+	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true}
+	client := &http.Client{Timeout: 900 * time.Millisecond, Transport: transport}
+	response, err := client.Get(a.dashboardAddress() + "/api/status")
 	if err != nil {
+		a.mu.Lock()
+		a.lastHealthErr = err.Error()
+		a.mu.Unlock()
 		return false
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
+		a.mu.Lock()
+		a.lastHealthErr = fmt.Sprintf("dashboard returned HTTP %d", response.StatusCode)
+		a.mu.Unlock()
 		return false
 	}
 	var status statusResponse
-	if json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status) != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status); err != nil {
+		a.mu.Lock()
+		a.lastHealthErr = "invalid /api/status response: " + err.Error()
+		a.mu.Unlock()
 		return false
 	}
 	a.mu.Lock()
 	a.running = true
 	a.domain = status.Domain
+	a.lastHealthErr = ""
 	a.mu.Unlock()
 	return true
 }
@@ -645,13 +797,22 @@ func (a *desktopApp) statusLoop() {
 		case <-ticker.C:
 			a.reloadDashboardURL()
 			a.syncIntegrationURL()
+			a.mu.Lock()
+			wasRunning := a.running
+			a.mu.Unlock()
 			running := a.health()
 			a.mu.Lock()
 			a.running = running
+			healthErr := a.lastHealthErr
 			if !running {
 				a.domain = ""
 			}
 			a.mu.Unlock()
+			if wasRunning && !running {
+				a.logf("dashboard health transitioned offline: %s", healthErr)
+			} else if !wasRunning && running {
+				a.logf("dashboard health transitioned online")
+			}
 			a.updateTooltip()
 		}
 	}
@@ -694,10 +855,52 @@ func (a *desktopApp) openDashboard() {
 	if !a.health() {
 		a.startNode(false)
 	}
-	shellOpen(a.dashboardURL)
+	shellOpen(a.dashboardAddress())
 }
 
-func (a *desktopApp) integrationEnabled() bool {
+func (a *desktopApp) writeDiagnostics() (string, error) {
+	a.mu.Lock()
+	running := a.running
+	domain := a.domain
+	dashboard := a.dashboardURL
+	healthErr := a.lastHealthErr
+	pid := 0
+	if a.cmd != nil && a.cmd.Process != nil {
+		pid = a.cmd.Process.Pid
+	}
+	a.mu.Unlock()
+
+	run := func(args ...string) string {
+		cmd := exec.Command(a.daemonPath, args...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		out, err := cmd.CombinedOutput()
+		text := strings.TrimSpace(string(out))
+		if err != nil {
+			if text != "" {
+				return text + "\nerror: " + err.Error()
+			}
+			return "error: " + err.Error()
+		}
+		return text
+	}
+
+	var report strings.Builder
+	fmt.Fprintf(&report, "KnotRoute Windows diagnostics\ncreated: %s\n\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(&report, "desktop\n  running health: %t\n  owned daemon pid: %d\n  dashboard: %s\n  domain: %s\n  last health error: %s\n  config: %s\n\n", running, pid, dashboard, domain, healthErr, a.configPath)
+	fmt.Fprintf(&report, "knotroute version\n%s\n\n", run("version"))
+	fmt.Fprintf(&report, "knotroute doctor\n%s\n\n", run("doctor", "--config", a.configPath))
+	fmt.Fprintf(&report, "desktop.log tail\n%s\n\n", tailFile(filepath.Join(a.dataDir, "desktop.log"), 16<<10))
+	fmt.Fprintf(&report, "knotroute.log tail\n%s\n", tailFile(filepath.Join(a.dataDir, "knotroute.log"), 24<<10))
+
+	path := filepath.Join(a.dataDir, "diagnostics-"+time.Now().Format("20060102-150405")+".txt")
+	if err := os.WriteFile(path, []byte(report.String()), 0o600); err != nil {
+		return "", err
+	}
+	a.logf("diagnostics report created: %s", path)
+	return path, nil
+}
+
+func (a *desktopApp) readIntegrationEnabled() bool {
 	data, err := os.ReadFile(filepath.Join(a.dataDir, "proxy-state.json"))
 	if err != nil {
 		return false
@@ -714,7 +917,7 @@ func (a *desktopApp) enableIntegration() error {
 		return fmt.Errorf(dt("install KnotRoute Root CA: %w", "не удалось установить корневой сертификат KnotRoute: %w"), err)
 	}
 	current, exists := regQuery("AutoConfigURL")
-	pac := a.dashboardURL + "/proxy.pac"
+	pac := a.dashboardAddress() + "/proxy.pac"
 	if exists && current != "" && !strings.EqualFold(current, pac) {
 		answer := messageBox(a.hwnd, "KnotRoute", dt("Windows already has a proxy configuration script:\n\n", "В Windows уже настроен proxy-скрипт:\n\n")+current+dt("\n\nKnotRoute will preserve and restore it when integration is disabled. Continue?", "\n\nKnotRoute сохранит его и восстановит после отключения интеграции. Продолжить?"), mbYesNo|mbIconWarning)
 		if answer != idYes {
@@ -733,10 +936,13 @@ func (a *desktopApp) enableIntegration() error {
 	return nil
 }
 func (a *desktopApp) syncIntegrationURL() {
-	if !a.integrationEnabled() {
+	a.mu.Lock()
+	integration := a.integration
+	a.mu.Unlock()
+	if !integration {
 		return
 	}
-	desired := a.dashboardURL + "/proxy.pac"
+	desired := a.dashboardAddress() + "/proxy.pac"
 	current, ok := regQuery("AutoConfigURL")
 	if ok && strings.EqualFold(current, desired) {
 		return
@@ -782,7 +988,7 @@ func (a *desktopApp) runCACommand(action string) error {
 	return nil
 }
 
-func (a *desktopApp) startupEnabled() bool {
+func (a *desktopApp) readStartupEnabled() bool {
 	value, ok := regQueryAt(`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "KnotRoute")
 	return ok && value != ""
 }
@@ -882,6 +1088,7 @@ func safeGo(fn func()) {
 	go func() {
 		defer func() {
 			if recovered := recover(); recovered != nil && app != nil {
+				app.logf("panic in background desktop task: %v\n%s", recovered, debug.Stack())
 				app.balloon(dt("KnotRoute desktop error", "Ошибка KnotRoute Desktop"), fmt.Sprint(recovered), niifWarning)
 			}
 		}()

@@ -76,7 +76,13 @@ func (n *Node) startDashboard() error {
 		w.Header().Set("Cache-Control", "no-store, max-age=0")
 		_, _ = io.WriteString(w, proxyserver.PAC(n.httpProxyAddress()))
 	})
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	static := http.FileServer(http.FS(sub))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Assets are not content-hashed. Force revalidation so a browser left open
+		// across a desktop upgrade cannot keep executing an old dashboard bundle.
+		w.Header().Set("Cache-Control", "no-cache, max-age=0")
+		static.ServeHTTP(w, r)
+	}))
 	listener, err := net.Listen("tcp", n.cfg.Dashboard)
 	if err != nil {
 		return fmt.Errorf("dashboard listen %s: %w", n.cfg.Dashboard, err)

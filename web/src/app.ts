@@ -93,17 +93,32 @@ function renderStatus(s: Status) {
   byId("httpAddress").textContent = s.proxy.http ? `http://${s.proxy.http}` : "выключено";
   byId("pacAddress").textContent = s.proxy.pac || "выключено";
   renderRoutes(s.routes); renderPeers(s.peers); renderEndpoints(s.services, s.forwards); renderEvents(s.events);
-  const health = document.querySelector<HTMLElement>(".health"); if (health) health.className = "health online";
-  byId("healthText").textContent = "Подключён";
+  const health = document.querySelector<HTMLElement>(".health");
+  if (health) {
+    health.className = "health online";
+    health.title = s.peers.length ? `Подключено пиров: ${s.peers.length}` : "Локальный узел работает, но активных пиров пока нет";
+  }
+  byId("healthText").textContent = s.peers.length ? "Сеть подключена" : "Узел работает · нет пиров";
 }
 async function refresh() {
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
-    if (!response.ok) throw new Error(response.statusText);
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
     renderStatus(await response.json());
-  } catch {
-    const health = document.querySelector<HTMLElement>(".health"); if (health) health.className = "health offline";
-    byId("healthText").textContent = "Нет связи";
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const health = document.querySelector<HTMLElement>(".health");
+    if (health) {
+      health.className = "health offline";
+      health.title = detail;
+    }
+    byId("healthText").textContent = "Локальный узел недоступен";
+    const previous = Array.isArray(lastStatus?.events) ? lastStatus.events : [];
+    renderEvents([...previous, {
+      time: new Date().toISOString(),
+      level: "error",
+      message: `Панель не может получить /api/status: ${detail}. Если страница уже была открыта, knotroute.exe мог завершиться. Проверьте %LOCALAPPDATA%\\KnotRoute\\knotroute.log и desktop.log.`,
+    }]);
   }
 }
 

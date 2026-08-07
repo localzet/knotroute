@@ -1,0 +1,10 @@
+services:
+  knotroute:
+    build: .
+    restart: unless-stopped
+    command: ["run", "--config", "/data/knotroute.json"]
+    volumes:
+      - ./data:/data
+    ports:
+      - "7447:7447/tcp"
+      - "127.0.0.1:8484:8484/tcp"

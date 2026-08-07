@@ -1,0 +1,21 @@
+{
+  "identity_file": "identity.json",
+  "listen": ["0.0.0.0:7447"],
+  "advertise": [],
+  "peers": [],
+  "services": [
+    {
+      "name": "web",
+      "target": "127.0.0.1:8080",
+      "description": "local development server",
+      "allow": []
+    }
+  ],
+  "forwards": [],
+  "dashboard": "127.0.0.1:8484",
+  "routing": {
+    "lsa_interval": "20s",
+    "lsa_ttl": "90s",
+    "max_hops": 16
+  }
+}

@@ -1,0 +1,10 @@
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+knotroute.json
+identity.json
+.DS_Store
+web/.build/
+node_modules/

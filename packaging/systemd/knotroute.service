@@ -1,0 +1,29 @@
+[Unit]
+Description=KnotRoute encrypted service overlay
+Documentation=https://github.com/localzet/knotroute
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=knotroute
+Group=knotroute
+ExecStart=/usr/local/bin/knotroute run --config /etc/knotroute/knotroute.json
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/knotroute
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>KnotRoute</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand"><span class="mark">K</span><div><h1>KnotRoute</h1><p>encrypted service overlay</p></div></div>
+      <div class="health"><span id="pulse"></span><strong id="healthText">Connecting</strong></div>
+    </header>
+    <main>
+      <section class="hero panel">
+        <div><span class="eyebrow">NODE IDENTITY</span><div class="identity-row"><code id="nodeId">—</code><button id="copyId">Copy</button></div><p id="listen">Starting…</p></div>
+        <div class="hero-stats"><div><strong id="peerCount">0</strong><span>direct peers</span></div><div><strong id="routeCount">0</strong><span>reachable nodes</span></div><div><strong id="streamCount">0</strong><span>active streams</span></div></div>
+      </section>
+      <section class="metric-grid">
+        <article class="panel metric"><span>Transferred</span><strong id="traffic">0 B</strong><small id="frames">0 frames</small></article>
+        <article class="panel metric"><span>Uptime</span><strong id="uptime">0s</strong><small id="version">—</small></article>
+        <article class="panel metric"><span>Published</span><strong id="serviceCount">0</strong><small>local TCP services</small></article>
+        <article class="panel metric"><span>Forwards</span><strong id="forwardCount">0</strong><small>local listeners</small></article>
+      </section>
+      <section class="two-col">
+        <article class="panel"><div class="section-title"><div><span class="eyebrow">TOPOLOGY</span><h2>Routes</h2></div><span class="badge" id="topologyBadge">0 nodes</span></div><div id="routes" class="table-wrap empty">No routes yet</div></article>
+        <article class="panel"><div class="section-title"><div><span class="eyebrow">LINKS</span><h2>Peers</h2></div></div><div id="peers" class="cards empty">No peers connected</div></article>
+      </section>
+      <section class="two-col lower">
+        <article class="panel"><div class="section-title"><div><span class="eyebrow">ENDPOINTS</span><h2>Services & forwards</h2></div></div><div id="endpoints" class="cards empty">Nothing configured</div></article>
+        <article class="panel"><div class="section-title"><div><span class="eyebrow">RUNTIME</span><h2>Event log</h2></div></div><div id="events" class="events empty">No events</div></article>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -108,6 +108,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, _ := controlweb.FS.ReadFile("index.html")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(raw)
 }
 func (s *server) asset(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +123,9 @@ func (s *server) asset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(name)))
-	w.Header().Set("Cache-Control", "public,max-age=3600")
+	// Asset filenames are stable (app.js/style.css), so they must be revalidated
+	// after each Control deployment instead of being cached for an hour.
+	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(raw)
 }
 

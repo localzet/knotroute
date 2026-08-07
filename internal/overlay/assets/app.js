@@ -44,7 +44,7 @@ function renderPeers(items) {
 }
 function renderEndpoints(services, forwards) {
     const root = byId("endpoints");
-    const all = [...services.map(x => ({ title: x.name, sub: x.target + (x.description ? ` · ${x.description}` : ""), tag: "service", ok: true })), ...forwards.map(x => ({ title: x.listen, sub: `${short(x.node)} / ${x.service}${x.error ? ` · ${x.error}` : ""}`, tag: "forward", ok: x.active }))];
+    const all = [...services.map(x => ({ title: x.domain || x.name, sub: `${x.name} → ${x.target}${x.description ? ` · ${x.description}` : ""}${x.introduction_points?.length ? ` · ${x.introduction_points.length} intros` : ""}`, tag: x.published ? "hidden service" : "direct service", ok: true })), ...forwards.map(x => ({ title: x.listen, sub: `${short(x.node)} / ${x.service}${x.error ? ` · ${x.error}` : ""}`, tag: "forward", ok: x.active }))];
     if (!all.length) {
         root.className = "cards empty";
         root.textContent = "Nothing configured";
@@ -67,15 +67,17 @@ function renderStatus(s) {
     lastStatus = s;
     byId("domain").textContent = s.domain;
     byId("nodeId").textContent = s.node_id;
+    byId("networkId").textContent = s.network_id ?? "—";
     byId("listen").textContent = s.listen.length ? `Listening on ${s.listen.join(", ")}` : "No overlay listener";
     byId("peerCount").textContent = String(s.peers.length);
     byId("routeCount").textContent = String(s.routes.length);
-    byId("streamCount").textContent = String(s.active_streams);
+    byId("streamCount").textContent = `${s.active_streams} / ${s.active_circuits ?? 0}`;
     byId("traffic").textContent = bytes(s.bytes_sent + s.bytes_received);
     byId("frames").textContent = `${s.frames_sent + s.frames_received} frames · ↑ ${bytes(s.bytes_sent)} ↓ ${bytes(s.bytes_received)}`;
     byId("uptime").textContent = duration((Date.now() - new Date(s.started_at).getTime()) / 1000);
     byId("version").textContent = `KnotRoute ${s.version}`;
-    byId("serviceCount").textContent = String(s.services.length);
+    byId("serviceCount").textContent = String(s.services.filter((x) => x.published).length);
+    byId("descriptorCount").textContent = `service identities · ${s.descriptors ?? 0} descriptors`;
     byId("gatewayCount").textContent = String(s.proxy.listeners.length);
     byId("topologyBadge").textContent = `${s.routes.length} nodes`;
     byId("socksAddress").textContent = s.proxy.socks ? `socks5://${s.proxy.socks}` : "disabled";
@@ -115,7 +117,11 @@ function makeRow(root, fields) {
         span.textContent = field.label;
         const input = document.createElement("input");
         input.dataset.key = field.key;
-        input.value = field.value ?? "";
+        input.type = field.type ?? "text";
+        if (input.type === "checkbox")
+            input.checked = field.checked ?? false;
+        else
+            input.value = field.value ?? "";
         input.placeholder = field.placeholder ?? "";
         input.addEventListener("input", markDirty);
         label.append(span, input);
@@ -131,6 +137,7 @@ function makeRow(root, fields) {
     root.append(row);
 }
 function value(row, key) { return (row.querySelector(`[data-key="${key}"]`)?.value ?? "").trim(); }
+function checked(row, key) { return row.querySelector(`[data-key="${key}"]`)?.checked ?? false; }
 function rows(id) { return [...byId(id).querySelectorAll(".editor-row")]; }
 function renderConfig(cfg) {
     currentConfig = cfg;
@@ -141,7 +148,7 @@ function renderConfig(cfg) {
     const serviceRoot = byId("serviceEditor");
     serviceRoot.replaceChildren();
     for (const s of cfg.services ?? [])
-        makeRow(serviceRoot, [{ key: "name", label: "Name", value: s.name, placeholder: "http", cls: "narrow" }, { key: "target", label: "Local target", value: s.target, placeholder: "127.0.0.1:8080" }, { key: "description", label: "Description", value: s.description }, { key: "allow", label: "Allowed node IDs", value: (s.allow ?? []).join(","), placeholder: "*", cls: "wide" }]);
+        makeRow(serviceRoot, [{ key: "name", label: "Name", value: s.name, placeholder: "web", cls: "narrow" }, { key: "target", label: "Local target", value: s.target, placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Publish identity", type: "checkbox", checked: s.publish ?? false, cls: "narrow" }, { key: "intros", label: "Intro points", type: "number", value: String(s.intro_count ?? 3), cls: "narrow" }, { key: "description", label: "Description", value: s.description }, { key: "allow", label: "Direct-mode node ACL", value: (s.allow ?? []).join(","), placeholder: "*", cls: "wide" }]);
     const forwardRoot = byId("forwardEditor");
     forwardRoot.replaceChildren();
     for (const f of cfg.forwards ?? [])
@@ -149,9 +156,24 @@ function renderConfig(cfg) {
     const aliasRoot = byId("aliasEditor");
     aliasRoot.replaceChildren();
     for (const a of cfg.aliases ?? [])
-        makeRow(aliasRoot, [{ key: "name", label: "Alias", value: a.name, placeholder: "localzet", cls: "narrow" }, { key: "node", label: "Node ID or canonical .knot address", value: a.node, placeholder: "kr_…", cls: "wide" }, { key: "description", label: "Description", value: a.description }]);
+        makeRow(aliasRoot, [{ key: "name", label: "Alias", value: a.name, placeholder: "server", cls: "narrow" }, { key: "node", label: "Node target", value: a.node, placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Service target", value: a.service_id, placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Description", value: a.description }]);
     byId("listenInput").value = cfg.listen.join("\n");
     byId("advertiseInput").value = (cfg.advertise ?? []).join("\n");
+    byId("networkIdInput").value = cfg.network_id;
+    byId("discoveryEnabled").checked = cfg.discovery.enabled;
+    byId("discoveryLan").checked = cfg.discovery.lan;
+    byId("discoveryPex").checked = cfg.discovery.peer_exchange;
+    byId("discoveryInterval").value = cfg.discovery.interval;
+    byId("beaconInput").value = (cfg.discovery.beacons ?? []).join("\n");
+    byId("circuitHops").value = String(cfg.privacy.circuit_hops);
+    byId("circuitTimeout").value = cfg.privacy.circuit_timeout;
+    byId("directoryReplicas").value = String(cfg.directory.replicas);
+    byId("descriptorTtl").value = cfg.directory.descriptor_ttl;
+    byId("descriptorPublish").value = cfg.directory.publish_interval;
+    byId("descriptorLookup").value = cfg.directory.lookup_timeout;
+    byId("caEnabled").checked = cfg.ca.enabled;
+    byId("caIntercept").checked = cfg.ca.intercept_https;
+    byId("caDirectory").value = cfg.ca.directory;
     byId("proxySocks").value = cfg.proxy.socks;
     byId("proxyHttp").value = cfg.proxy.http;
     byId("defaultHttp").value = cfg.proxy.default_http_service;
@@ -178,9 +200,14 @@ function collectConfig() {
         listen: lines(byId("listenInput").value),
         advertise: lines(byId("advertiseInput").value),
         peers: rows("peerEditor").map(row => ({ address: value(row, "address"), ...(value(row, "expected") ? { expected_id: value(row, "expected") } : {}) })).filter(x => x.address),
-        services: rows("serviceEditor").map(row => ({ name: value(row, "name"), target: value(row, "target"), ...(value(row, "description") ? { description: value(row, "description") } : {}), ...(csv(value(row, "allow")).length ? { allow: csv(value(row, "allow")) } : {}) })).filter(x => x.name || x.target),
+        network_id: byId("networkIdInput").value.trim(),
+        services: rows("serviceEditor").map(row => ({ name: value(row, "name"), target: value(row, "target"), publish: checked(row, "publish"), intro_count: Number(value(row, "intros") || "3"), ...(value(row, "description") ? { description: value(row, "description") } : {}), ...(csv(value(row, "allow")).length ? { allow: csv(value(row, "allow")) } : {}) })).filter(x => x.name || x.target),
         forwards: rows("forwardEditor").map(row => ({ listen: value(row, "listen"), node: value(row, "node"), service: value(row, "service") })).filter(x => x.listen || x.node || x.service),
-        aliases: rows("aliasEditor").map(row => ({ name: value(row, "name"), node: value(row, "node"), ...(value(row, "description") ? { description: value(row, "description") } : {}) })).filter(x => x.name || x.node),
+        aliases: rows("aliasEditor").map(row => ({ name: value(row, "name"), ...(value(row, "node") ? { node: value(row, "node") } : {}), ...(value(row, "serviceId") ? { service_id: value(row, "serviceId") } : {}), ...(value(row, "description") ? { description: value(row, "description") } : {}) })).filter(x => x.name || x.node || x.service_id),
+        discovery: { ...currentConfig.discovery, enabled: byId("discoveryEnabled").checked, lan: byId("discoveryLan").checked, peer_exchange: byId("discoveryPex").checked, interval: byId("discoveryInterval").value.trim(), beacons: lines(byId("beaconInput").value) },
+        privacy: { circuit_hops: Number(byId("circuitHops").value), circuit_timeout: byId("circuitTimeout").value.trim() },
+        directory: { replicas: Number(byId("directoryReplicas").value), descriptor_ttl: byId("descriptorTtl").value.trim(), publish_interval: byId("descriptorPublish").value.trim(), lookup_timeout: byId("descriptorLookup").value.trim() },
+        ca: { enabled: byId("caEnabled").checked, directory: byId("caDirectory").value.trim(), intercept_https: byId("caIntercept").checked },
         dashboard: byId("dashboardInput").value.trim(),
         proxy: { socks: byId("proxySocks").value.trim(), http: byId("proxyHttp").value.trim(), direct: byId("proxyDirect").checked, default_http_service: byId("defaultHttp").value.trim(), default_https_service: byId("defaultHttps").value.trim() },
         routing: { lsa_interval: byId("lsaInterval").value.trim(), lsa_ttl: byId("lsaTtl").value.trim(), max_hops: Number(byId("maxHops").value) }
@@ -226,9 +253,9 @@ for (const button of document.querySelectorAll("[data-copy]"))
         setTimeout(() => button.textContent = old, 1200);
     });
 byId("addPeer").addEventListener("click", () => makeRow(byId("peerEditor"), [{ key: "address", label: "Address", placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Expected node ID", placeholder: "kr_…", cls: "wide" }]));
-byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Name", placeholder: "http", cls: "narrow" }, { key: "target", label: "Local target", placeholder: "127.0.0.1:8080" }, { key: "description", label: "Description" }, { key: "allow", label: "Allowed node IDs", placeholder: "*", cls: "wide" }]));
+byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Name", placeholder: "web", cls: "narrow" }, { key: "target", label: "Local target", placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Publish identity", type: "checkbox", checked: true, cls: "narrow" }, { key: "intros", label: "Intro points", type: "number", value: "3", cls: "narrow" }, { key: "description", label: "Description" }, { key: "allow", label: "Direct-mode node ACL", placeholder: "*", cls: "wide" }]));
 byId("addForward").addEventListener("click", () => makeRow(byId("forwardEditor"), [{ key: "listen", label: "Local listener", placeholder: "127.0.0.1:2222" }, { key: "node", label: "Remote node ID", placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Service", placeholder: "ssh", cls: "narrow" }]));
-byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Alias", placeholder: "localzet", cls: "narrow" }, { key: "node", label: "Node ID or canonical .knot address", placeholder: "kr_…", cls: "wide" }, { key: "description", label: "Description" }]));
+byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Alias", placeholder: "server", cls: "narrow" }, { key: "node", label: "Node target", placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Service target", placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Description" }]));
 byId("saveConfig").addEventListener("click", () => void saveConfig());
 byId("restartNode").addEventListener("click", async () => { await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Restart requested", "success"); });
 byId("stopNode").addEventListener("click", async () => { if (!confirm("Stop the KnotRoute node? The tray controller can start it again."))

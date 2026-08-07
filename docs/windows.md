@@ -2,26 +2,44 @@
 
 ## Desktop installation
 
-Extract the release archive and run:
+Extract the Windows release archive and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install-KnotRoute.ps1
 ```
 
-The installer is per-user and does not require elevation. It copies:
+The per-user installer copies the desktop binaries under:
 
 ```text
-%LOCALAPPDATA%\Programs\KnotRoute\knotroute.exe
-%LOCALAPPDATA%\Programs\KnotRoute\knotroute-desktop.exe
+%LOCALAPPDATA%\Programs\KnotRoute
 ```
 
-Identity, configuration, logs, and proxy-setting backup are stored separately:
+Persistent identity, configuration, service identities, CA material, logs, peer cache, and integration-state backup are kept separately under:
 
 ```text
 %LOCALAPPDATA%\KnotRoute
 ```
 
-The separation allows an application upgrade without deleting the node identity.
+This separation allows application upgrades without replacing cryptographic identities.
+
+## Which executable to run
+
+For normal interactive desktop use run:
+
+```text
+knotroute-desktop.exe
+```
+
+The archive also contains:
+
+```text
+knotroute.exe           CLI and overlay daemon
+knotroute-service.exe   Windows Service Control Manager wrapper
+knotroute-beacon.exe    Beacon/bootstrap server
+knotroute-sidecar.exe   sidecar/server launcher
+```
+
+The tray controller initializes and starts `knotroute.exe` automatically when necessary.
 
 ## Tray controller
 
@@ -31,46 +49,90 @@ Double-click the tray icon to open the dashboard. Right-click it for:
 - Start node;
 - Stop node;
 - Restart node;
-- Copy `.knot` address;
-- Enable or disable `.knot` system integration;
-- enable or disable launch at sign-in;
-- open the data directory;
-- exit the tray while leaving the node running.
+- Copy node `.knot` address;
+- Enable/disable `.knot` system integration;
+- Enable/disable launch at sign-in;
+- Open the data directory;
+- Exit the tray while leaving the daemon running.
 
-The desktop controller automatically initializes a configuration on first start and starts the hidden daemon process. The daemon can be stopped from either the tray or dashboard.
+The dashboard exposes v3 configuration for:
+
+- `network_id`;
+- seed peers and advertised addresses;
+- Beacon/LAN/PEX discovery;
+- published service identities and introduction-point count;
+- direct forwards and aliases;
+- circuit hop policy;
+- directory replication/TTL;
+- local SOCKS/HTTP gateways;
+- local CA behavior.
+
+Configuration updates are validated and atomically written before a daemon restart is requested.
 
 ## `.knot` system integration
 
-The integration switch sets the current user's `AutoConfigURL` to:
+The integration switch performs two per-user operations.
+
+### 1. Local Root CA
+
+KnotRoute asks for confirmation, creates the local CA if needed, and installs its public root certificate into the current user's Windows Trusted Root store.
+
+The private CA key remains under the KnotRoute data directory. The certificate issuer rejects non-`.knot` hostnames.
+
+When integration is disabled, KnotRoute removes its root from the current user's trusted-root store.
+
+### 2. PAC script
+
+The current user's `AutoConfigURL` is set to:
 
 ```text
 http://127.0.0.1:8484/proxy.pac
 ```
 
-The PAC script returns the KnotRoute HTTP proxy only for `.knot` hostnames and returns `DIRECT` for all other destinations.
+The PAC script returns KnotRoute's HTTP proxy only for `.knot` names and `DIRECT` for every other destination.
 
-Before changing the setting, the controller records the previous script URL in:
+Before replacement, the previous proxy-script value is saved under:
 
 ```text
 %LOCALAPPDATA%\KnotRoute\proxy-state.json
 ```
 
-Disabling integration restores the previous value. If another proxy script is already configured, KnotRoute asks before replacing it.
+Disabling integration restores it. If another PAC URL is already present, the tray asks before replacing it.
 
-A separate TUN-based product can continue routing normal `DIRECT` traffic. KnotRoute does not create, modify, or claim a TUN adapter.
+## Coexisting with TUN/VPN clients
 
-Applications that ignore Windows proxy settings can use:
+The normal KnotRoute desktop mode creates no TUN/TAP adapter and does not replace the Windows IP route table.
+
+`DIRECT` destinations from the PAC file continue through the operating system normally. If another product owns a TUN interface, that product can continue handling ordinary Internet traffic while KnotRoute handles `.knot` HTTP/HTTPS at the application-proxy layer.
+
+Applications that ignore Windows proxy settings can explicitly use:
 
 ```text
-SOCKS5: 127.0.0.1:9477
-HTTP:   127.0.0.1:9478
+SOCKS5  127.0.0.1:9477
+HTTP    127.0.0.1:9478
 ```
 
-Use remote-hostname SOCKS mode so the application sends `.knot` names to KnotRoute.
+For SOCKS5, use remote-hostname mode so `.knot` names reach KnotRoute instead of the system DNS resolver.
+
+## HTTPS flow
+
+For a published service-identity address:
+
+```text
+browser
+  └─ TLS to local KnotRoute proxy using local Root CA
+       └─ hidden-service lookup
+            └─ client onion circuit
+                 └─ rendezvous
+                      └─ service onion circuit
+                           └─ service target
+```
+
+The browser-facing TLS connection is local. The network path has its own independent end-to-end service encryption authenticated by the service identity.
 
 ## Windows Service mode
 
-Desktop and Service mode use different default data locations and should not be run simultaneously with conflicting listener ports.
+Desktop and machine-wide Service mode use different default data locations and should not bind the same ports simultaneously.
 
 Open an elevated PowerShell window in the release directory:
 
@@ -78,20 +140,19 @@ Open an elevated PowerShell window in the release directory:
 powershell -ExecutionPolicy Bypass -File .\service\install-service.ps1
 ```
 
-The script installs:
+The service scripts install under:
 
 ```text
-%ProgramFiles%\KnotRoute\knotroute.exe
-%ProgramFiles%\KnotRoute\knotroute-service.exe
+%ProgramFiles%\KnotRoute
 ```
 
-Service data is stored in:
+and keep service data under:
 
 ```text
 %ProgramData%\KnotRoute
 ```
 
-The `knotroute-service.exe` binary is a native Service Control Manager wrapper. It starts the KnotRoute daemon, reports service state, handles stop and shutdown controls, and terminates the child process if graceful shutdown does not complete.
+`knotroute-service.exe` is a native SCM wrapper. It starts the daemon, reports state, handles stop/shutdown controls, and terminates the child if graceful shutdown cannot complete.
 
 Remove it with:
 
@@ -99,14 +160,14 @@ Remove it with:
 powershell -ExecutionPolicy Bypass -File .\service\uninstall-service.ps1
 ```
 
-Add `-RemoveData` to delete the machine identity and configuration too.
+Add `-RemoveData` only when machine identities should also be destroyed.
 
 ## Uninstallation
 
-From the extracted release directory:
+From an extracted release archive:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Uninstall-KnotRoute.ps1
 ```
 
-By default, the identity and configuration are retained. Use `-RemoveIdentity` only when the node identity should be permanently deleted.
+The uninstaller removes system integration. By default it retains identities/configuration; use its explicit identity-removal option only when those cryptographic identities should be permanently discarded.

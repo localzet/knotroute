@@ -18,24 +18,28 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/localzet/knotroute/internal/certauth"
 	"github.com/localzet/knotroute/internal/config"
+	"github.com/localzet/knotroute/internal/discovery"
 	"github.com/localzet/knotroute/internal/identity"
 	"github.com/localzet/knotroute/internal/naming"
+	"github.com/localzet/knotroute/internal/networkid"
 	"github.com/localzet/knotroute/internal/nodeid"
 	"github.com/localzet/knotroute/internal/protocol"
 	proxyserver "github.com/localzet/knotroute/internal/proxy"
 	"github.com/localzet/knotroute/internal/router"
 )
 
-const Version = "2.0.0"
+var Version = "3.0.0"
 
 type counters struct {
 	bytesSent, bytesReceived, framesSent, framesReceived atomic.Uint64
 }
 
 type Node struct {
-	cfg config.Config
-	id  *identity.Identity
+	cfg     config.Config
+	id      *identity.Identity
+	network networkid.ID
 
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -81,9 +85,21 @@ type Node struct {
 	restartOnce       sync.Once
 	shutdownOnce      sync.Once
 	stats             counters
+
+	discoveryMu sync.Mutex
+	discovered  map[nodeid.ID]discovery.Candidate
+	dialing     map[nodeid.ID]bool
+	directory   directoryState
+	rendezvous  rendezvousState
+	circuits    circuitState
+	ca          *certauth.Authority
 }
 
 func New(cfg config.Config, id *identity.Identity) (*Node, error) {
+	network, err := cfg.Network()
+	if err != nil {
+		return nil, err
+	}
 	cert, err := makeCertificate(id)
 	if err != nil {
 		return nil, err
@@ -96,12 +112,25 @@ func New(cfg config.Config, id *identity.Identity) (*Node, error) {
 		Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13,
 		InsecureSkipVerify: true, // self-authenticating key; verified after handshake
 	}
-	return &Node{
-		cfg: cfg, id: id, serverTLS: serverTLS, clientTLS: clientTLS,
+	n := &Node{
+		cfg: cfg, id: id, network: network, serverTLS: serverTLS, clientTLS: clientTLS,
 		peers: map[nodeid.ID]*peer{}, lsas: map[nodeid.ID]protocol.LSA{}, routes: map[nodeid.ID]router.Route{},
 		seenPackets: map[[16]byte]time.Time{}, streams: map[[16]byte]*stream{}, pending: map[[16]byte]chan openResult{},
-		restartRequested: make(chan struct{}), shutdownRequested: make(chan struct{}),
-	}, nil
+		restartRequested: make(chan struct{}), shutdownRequested: make(chan struct{}), discovered: map[nodeid.ID]discovery.Candidate{}, dialing: map[nodeid.ID]bool{},
+	}
+	if cfg.CA.Enabled && cfg.CA.Directory != "" && cfg.Path != "" {
+		authority, caErr := certauth.LoadOrCreate(cfg.CA.Directory)
+		if caErr != nil {
+			return nil, fmt.Errorf("initialize local CA: %w", caErr)
+		}
+		n.ca = authority
+	}
+	if err := n.initDirectory(); err != nil {
+		return nil, err
+	}
+	n.initRendezvous()
+	n.initCircuits()
+	return n, nil
 }
 
 func makeCertificate(id *identity.Identity) (tls.Certificate, error) {
@@ -163,14 +192,22 @@ func (n *Node) Start(parent context.Context) error {
 			n.wg.Add(1)
 			go n.dialLoop(p)
 		}
+		if n.cfg.Discovery.Enabled {
+			n.startDiscovery()
+		}
 		n.wg.Add(1)
 		go n.maintenanceLoop()
+		n.wg.Add(1)
+		go n.directoryLoop()
 		n.startForwards()
 		gateway := &proxyserver.Gateway{
 			Aliases: n.cfg.Aliases, Direct: n.cfg.Proxy.Direct,
 			DefaultHTTP: n.cfg.Proxy.DefaultHTTP, DefaultHTTPS: n.cfg.Proxy.DefaultHTTPS,
-			DialOverlay: n.OpenStream,
-			Event:       n.addEvent,
+			DialOverlay:    n.OpenStream,
+			DialService:    n.OpenService,
+			Authority:      n.ca,
+			InterceptHTTPS: n.cfg.CA.Enabled && n.cfg.CA.InterceptHTTPS,
+			Event:          n.addEvent,
 		}
 		addresses, err := gateway.Start(n.ctx, n.cfg.Proxy.SOCKS, n.cfg.Proxy.HTTP)
 		if err != nil {
@@ -202,6 +239,8 @@ func (n *Node) Stop() {
 		if n.proxyGateway != nil {
 			n.proxyGateway.Close()
 		}
+		n.closeCircuits()
+		n.closeInternalServices()
 		n.listenersMu.Lock()
 		for _, l := range n.listeners {
 			_ = l.Close()
@@ -255,7 +294,20 @@ func (n *Node) advertisedAddresses() []string {
 	if len(n.cfg.Advertise) > 0 {
 		return append([]string(nil), n.cfg.Advertise...)
 	}
-	return n.Addresses()
+
+	out := make([]string, 0, len(n.Addresses()))
+	for _, address := range n.Addresses() {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil || port == "" {
+			continue
+		}
+		ip := net.ParseIP(host)
+		if ip == nil || ip.IsUnspecified() || ip.IsLoopback() {
+			continue
+		}
+		out = append(out, address)
+	}
+	return out
 }
 
 func (n *Node) acceptLoop(listener net.Listener) {
@@ -349,6 +401,10 @@ func (n *Node) registerPeer(p *peer) bool {
 	}
 	n.emitLocalLSA()
 	n.sendAllLSAs(p)
+	if n.cfg.Discovery.Enabled && n.cfg.Discovery.PeerExchange {
+		raw, _ := json.Marshal(discovery.Response{Peers: n.pexCandidates()})
+		_ = p.send(protocol.FramePEX, raw)
+	}
 	return true
 }
 
@@ -580,7 +636,7 @@ func (n *Node) addEvent(level, message string) {
 }
 
 func (n *Node) Status() Status {
-	status := Status{Name: "KnotRoute", Version: Version, NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: n.Addresses(), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
+	status := Status{Name: "KnotRoute", Version: Version, NetworkID: n.network.String(), NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: n.Addresses(), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
 	status.Proxy = ProxyStatus{SOCKS: n.cfg.Proxy.SOCKS, HTTP: n.cfg.Proxy.HTTP, Direct: n.cfg.Proxy.Direct, Listeners: append([]string(nil), n.proxyAddresses...)}
 	for _, address := range n.proxyAddresses {
 		if strings.HasPrefix(address, "socks5://") {
@@ -623,15 +679,36 @@ func (n *Node) Status() Status {
 		}
 		return status.Routes[i].Destination < status.Routes[j].Destination
 	})
+	domains := n.serviceDomains()
 	for _, s := range n.cfg.Services {
-		status.Services = append(status.Services, ServiceStatus{Name: s.Name, Target: s.Target, Description: s.Description})
+		entry := ServiceStatus{Name: s.Name, Target: s.Target, Description: s.Description, Published: s.Publish, Domain: domains[s.Name]}
+		if s.Publish {
+			n.directory.mu.RLock()
+			pub := n.directory.local[s.Name]
+			n.directory.mu.RUnlock()
+			if pub != nil {
+				entry.ServiceID = pub.identity.ID.String()
+				for _, intro := range n.activeIntros(pub) {
+					entry.Introduction = append(entry.Introduction, intro.String())
+				}
+			}
+		}
+		status.Services = append(status.Services, entry)
 	}
 	for _, a := range n.cfg.Aliases {
 		resolved, err := naming.ResolveHost(a.Name+naming.Suffix, n.cfg.Aliases)
 		if err != nil {
 			continue
 		}
-		status.Aliases = append(status.Aliases, AliasStatus{Name: a.Name, Node: resolved.Node.String(), Domain: a.Name + naming.Suffix, Description: a.Description})
+		entry := AliasStatus{Name: a.Name, Domain: a.Name + naming.Suffix, Description: a.Description}
+		if resolved.Kind == naming.AddressService {
+			entry.Kind = "service"
+			entry.Target = resolved.ServiceID.String()
+		} else {
+			entry.Kind = "node"
+			entry.Target = resolved.Node.String()
+		}
+		status.Aliases = append(status.Aliases, entry)
 	}
 	n.forwardsMu.RLock()
 	status.Forwards = append(status.Forwards, n.forwardState...)
@@ -639,6 +716,12 @@ func (n *Node) Status() Status {
 	n.streamsMu.Lock()
 	status.ActiveStreams = len(n.streams)
 	n.streamsMu.Unlock()
+	n.circuits.mu.RLock()
+	status.ActiveCircuits = len(n.circuits.clients) + len(n.circuits.relayIn)
+	n.circuits.mu.RUnlock()
+	n.directory.mu.RLock()
+	status.Descriptors = len(n.directory.descriptors)
+	n.directory.mu.RUnlock()
 	n.eventsMu.RLock()
 	status.Events = append([]Event(nil), n.events...)
 	n.eventsMu.RUnlock()

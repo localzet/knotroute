@@ -93,6 +93,7 @@ func startTestNodeWithProxy(t *testing.T, ctx context.Context, cfg config.Config
 	cfg.Listen = []string{"127.0.0.1:0"}
 	cfg.Dashboard = ""
 	cfg.Routing = config.Routing{LSAInterval: "200ms", LSATTL: "3s", MaxHops: 16}
+	cfg.Discovery.Enabled = false
 	id, err := identity.Generate()
 	if err != nil {
 		t.Fatal(err)

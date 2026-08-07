@@ -57,6 +57,7 @@ func (n *Node) establishPeer(raw net.Conn, outbound bool, expected *nodeid.ID) (
 
 	hello := protocol.Hello{
 		Version:   protocol.ProtocolVersion,
+		NetworkID: n.network.String(),
 		NodeID:    n.id.ID.String(),
 		PublicKey: base64.StdEncoding.EncodeToString(n.id.PublicKey),
 		Advertise: n.advertisedAddresses(),
@@ -84,6 +85,10 @@ func (n *Node) establishPeer(raw net.Conn, outbound bool, expected *nodeid.ID) (
 	if remote.Version != protocol.ProtocolVersion {
 		_ = conn.Close()
 		return nil, fmt.Errorf("unsupported peer protocol version %d", remote.Version)
+	}
+	if remote.NetworkID != n.network.String() {
+		_ = conn.Close()
+		return nil, fmt.Errorf("network mismatch: peer is on %s", remote.NetworkID)
 	}
 	claimedID, err := nodeid.Parse(remote.NodeID)
 	if err != nil || claimedID != peerID {
@@ -135,6 +140,15 @@ func (p *peer) run() {
 		case protocol.FramePing:
 			_ = p.send(protocol.FramePong, payload)
 		case protocol.FramePong:
+		case protocol.FramePEX:
+			p.node.handlePEX(payload)
+		case protocol.FrameCircuit:
+			cell, err := protocol.ParseCircuitCell(payload)
+			if err != nil {
+				p.node.addEvent("warn", "bad circuit cell: "+err.Error())
+				continue
+			}
+			p.node.handleCircuitCell(p, cell)
 		default:
 			p.node.addEvent("warn", fmt.Sprintf("peer %s sent unknown frame type %d", p.id.Short(), typ))
 		}
@@ -167,4 +181,12 @@ func (p *peer) close(reason string) {
 		close(p.done)
 		p.node.addEvent("info", fmt.Sprintf("peer %s disconnected: %s", p.id.Short(), reason))
 	})
+}
+
+func (p *peer) sendCircuit(cell protocol.CircuitCell) error {
+	raw, err := cell.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return p.send(protocol.FrameCircuit, raw)
 }

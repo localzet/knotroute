@@ -32,20 +32,20 @@
           <div class="identity-block">
             <span class="eyebrow">CANONICAL .KNOT ADDRESS</span>
             <div class="identity-row"><code id="domain">—</code><button class="copy" data-copy="domain">Copy</button></div>
-            <div class="secondary-id"><span>Node ID</span><code id="nodeId">—</code><button class="copy mini" data-copy="nodeId">Copy</button></div>
+            <div class="secondary-id"><span>Node ID</span><code id="nodeId">—</code><button class="copy mini" data-copy="nodeId">Copy</button></div><div class="secondary-id"><span>Network</span><code id="networkId">—</code><button class="copy mini" data-copy="networkId">Copy</button></div>
             <p id="listen">Starting…</p>
           </div>
           <div class="hero-stats">
             <div><strong id="peerCount">0</strong><span>direct peers</span></div>
             <div><strong id="routeCount">0</strong><span>reachable nodes</span></div>
-            <div><strong id="streamCount">0</strong><span>active streams</span></div>
+            <div><strong id="streamCount">0</strong><span>streams / circuits</span></div>
           </div>
         </section>
 
         <section class="metric-grid">
           <article class="panel metric"><span>Transferred</span><strong id="traffic">0 B</strong><small id="frames">0 frames</small></article>
           <article class="panel metric"><span>Uptime</span><strong id="uptime">0s</strong><small id="version">—</small></article>
-          <article class="panel metric"><span>Published</span><strong id="serviceCount">0</strong><small>local TCP services</small></article>
+          <article class="panel metric"><span>Published</span><strong id="serviceCount">0</strong><small id="descriptorCount">service identities · 0 descriptors</small></article>
           <article class="panel metric"><span>Local gateways</span><strong id="gatewayCount">0</strong><small>SOCKS5 and HTTP</small></article>
         </section>
 
@@ -68,8 +68,22 @@
 
       <div class="tab-page" data-page="network">
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">SEED CONNECTIONS</span><h2>Peers</h2><p>At least one reachable seed is enough to join an existing overlay.</p></div><button class="button" id="addPeer">Add peer</button></div>
+          <div class="section-title"><div><span class="eyebrow">STATIC SEEDS</span><h2>Peers</h2><p>Optional fixed peers. Discovery can bootstrap through Beacons, LAN and peer exchange.</p></div><button class="button" id="addPeer">Add peer</button></div>
           <div id="peerEditor" class="editor-list"></div>
+        </section>
+
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">DISCOVERY</span><h2>Automatic peering</h2><p>Use multiple independent discovery channels. Beacon servers only exchange signed peer candidates.</p></div></div>
+          <div class="form-grid two">
+            <label><span>Network ID</span><input id="networkIdInput" placeholder="kn_…" /></label>
+            <label><span>Discovery interval</span><input id="discoveryInterval" placeholder="30s" /></label>
+            <label><span>Beacon URLs</span><textarea id="beaconInput" rows="4" placeholder="https://beacon.example"></textarea></label>
+            <div>
+              <label class="switch-row"><input type="checkbox" id="discoveryEnabled" /><span><strong>Automatic discovery</strong><small>Enable dynamic candidate discovery.</small></span></label>
+              <label class="switch-row"><input type="checkbox" id="discoveryLan" /><span><strong>LAN multicast</strong><small>Discover nodes on the local network.</small></span></label>
+              <label class="switch-row"><input type="checkbox" id="discoveryPex" /><span><strong>Peer exchange</strong><small>Learn candidates from connected peers.</small></span></label>
+            </div>
+          </div>
         </section>
         <section class="panel editor-panel">
           <div class="section-title"><div><span class="eyebrow">LOCAL LISTENERS</span><h2>Transport</h2></div></div>
@@ -79,7 +93,7 @@
 
       <div class="tab-page" data-page="services">
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">PUBLISH</span><h2>Local services</h2><p>Each service becomes <code>service.your-address.knot</code>.</p></div><button class="button" id="addService">Add service</button></div>
+          <div class="section-title"><div><span class="eyebrow">PUBLISH</span><h2>Service identities</h2><p>A published service receives its own portable self-authenticating <code>…​.knot</code> identity and is reached through introduction points + rendezvous circuits.</p></div><button class="button" id="addService">Add service</button></div>
           <div id="serviceEditor" class="editor-list"></div>
         </section>
         <section class="panel editor-panel">
@@ -90,7 +104,7 @@
 
       <div class="tab-page" data-page="names">
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">ADDRESS BOOK</span><h2>Local aliases</h2><p><code>git.localzet.knot</code> resolves locally to the selected node and service.</p></div><button class="button" id="addAlias">Add alias</button></div>
+          <div class="section-title"><div><span class="eyebrow">ADDRESS BOOK</span><h2>Local aliases</h2><p>An alias can point either to a node identity or directly to a portable service identity.</p></div><button class="button" id="addAlias">Add alias</button></div>
           <div id="aliasEditor" class="editor-list"></div>
           <div class="notice">Aliases are deliberately local. For portable proof-of-ownership records use <code>knotroute alias export</code> and <code>knotroute alias import</code>.</div>
         </section>
@@ -106,6 +120,24 @@
             <label><span>Default HTTPS service</span><input id="defaultHttps" placeholder="https" /></label>
           </div>
           <label class="switch-row"><input type="checkbox" id="proxyDirect" /><span><strong>Allow direct fallback</strong><small>Non-.knot hosts are connected through the operating system normally.</small></span></label>
+        </section>
+
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">PRIVACY</span><h2>Circuits & directory</h2><p>Fresh onion circuits are built per connection; service descriptors are replicated across the distributed directory.</p></div></div>
+          <div class="form-grid two">
+            <label><span>Circuit hops</span><input id="circuitHops" type="number" min="1" max="8" /></label>
+            <label><span>Circuit timeout</span><input id="circuitTimeout" placeholder="15s" /></label>
+            <label><span>Directory replicas</span><input id="directoryReplicas" type="number" min="1" max="16" /></label>
+            <label><span>Descriptor lifetime</span><input id="descriptorTtl" placeholder="10m" /></label>
+            <label><span>Publish interval</span><input id="descriptorPublish" placeholder="2m" /></label>
+            <label><span>Lookup timeout</span><input id="descriptorLookup" placeholder="8s" /></label>
+          </div>
+        </section>
+        <section class="panel editor-panel">
+          <div class="section-title"><div><span class="eyebrow">HTTPS</span><h2>Local .knot CA</h2><p>The root private key never leaves this device. Certificates are issued only for <code>.knot</code> names.</p></div></div>
+          <div class="form-grid two"><label><span>CA directory</span><input id="caDirectory" placeholder="ca" /></label></div>
+          <label class="switch-row"><input type="checkbox" id="caEnabled" /><span><strong>Enable local CA</strong><small>Required for browser-trusted HTTPS integration.</small></span></label>
+          <label class="switch-row"><input type="checkbox" id="caIntercept" /><span><strong>Terminate .knot HTTPS locally</strong><small>The plaintext side exists only between the local proxy and the already E2E-encrypted service stream.</small></span></label>
         </section>
         <section class="panel editor-panel">
           <div class="section-title"><div><span class="eyebrow">CONTROL PLANE</span><h2>Dashboard & routing</h2></div></div>

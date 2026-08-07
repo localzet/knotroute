@@ -16,6 +16,7 @@ import (
 
 type Hello struct {
 	Version   int      `json:"version"`
+	NetworkID string   `json:"network_id"`
 	NodeID    string   `json:"node_id"`
 	PublicKey string   `json:"public_key"`
 	Advertise []string `json:"advertise,omitempty"`
@@ -199,4 +200,12 @@ func openRequestMessage(streamID [16]byte, src, dst nodeid.ID, req OpenRequest) 
 
 func openAckMessage(streamID [16]byte, src, dst nodeid.ID, ack OpenAck) []byte {
 	return []byte("knotroute/ack/v1|" + hex.EncodeToString(streamID[:]) + "|" + src.String() + "|" + dst.String() + "|" + ack.EphemeralKey + "|" + ack.Nonce + "|" + fmt.Sprint(ack.TimeUnix))
+}
+
+type DescriptorGet struct {
+	ServiceID string `json:"service_id"`
+}
+type DescriptorResponse struct {
+	Found      bool            `json:"found"`
+	Descriptor json.RawMessage `json:"descriptor,omitempty"`
 }

@@ -1,0 +1,24 @@
+services:
+  beacon:
+    build:
+      context: .
+      dockerfile: Dockerfile.beacon
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "7447:7447"
+    volumes:
+      - beacon-data:/data
+    environment:
+      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_BEACON_TTL: "2m"
+      KNOTROUTE_BEACON_MAX_NETWORK_PEERS: "4096"
+      KNOTROUTE_BEACON_RELAY: "true"
+      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
+      # Optional. When omitted, clients derive the relay host from the Beacon URL.
+      KNOTROUTE_BEACON_RELAY_ADVERTISE: ""
+      # Set this for an isolated network. The default is KnotRoute's public network ID.
+      KNOTROUTE_NETWORK_ID: ""
+
+volumes:
+  beacon-data:

@@ -19,13 +19,17 @@ const (
 	FramePacket byte = 3
 	FramePing   byte = 4
 	FramePong   byte = 5
+	FramePEX    byte = 6
 
-	PacketOpen    byte = 1
-	PacketOpenAck byte = 2
-	PacketData    byte = 3
-	PacketClose   byte = 4
-	PacketError   byte = 5
-	PacketReady   byte = 6
+	PacketOpen               byte = 1
+	PacketOpenAck            byte = 2
+	PacketData               byte = 3
+	PacketClose              byte = 4
+	PacketError              byte = 5
+	PacketReady              byte = 6
+	PacketDescriptorPut      byte = 10
+	PacketDescriptorGet      byte = 11
+	PacketDescriptorResponse byte = 12
 )
 
 const packetHeaderSize = 1 + 1 + 1 + 1 + 32 + 32 + 16 + 16 + 8

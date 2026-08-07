@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/localzet/knotroute/internal/config"
 	"github.com/localzet/knotroute/internal/nodeid"
 	"github.com/localzet/knotroute/internal/protocol"
 )
@@ -227,6 +228,9 @@ func (n *Node) openWithConn(ctx context.Context, destination nodeid.ID, serviceN
 }
 
 func (n *Node) handleLocalPacket(packet protocol.Packet) {
+	if n.handleDirectoryPacket(packet) {
+		return
+	}
 	switch packet.Kind {
 	case protocol.PacketOpen:
 		n.wg.Add(1)
@@ -297,20 +301,28 @@ func (n *Node) handleOpen(packet protocol.Packet) {
 		n.sendOpenError(packet, err.Error())
 		return
 	}
-	service, ok := n.service(req.Service)
-	if !ok {
-		n.sendOpenError(packet, "service not found")
-		return
-	}
-	if !n.allowed(service, packet.Src) {
-		n.sendOpenError(packet, "source is not allowed to access this service")
-		return
-	}
-	dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 20 * time.Second}
-	conn, err := dialer.DialContext(n.ctx, "tcp", service.Target)
-	if err != nil {
-		n.sendOpenError(packet, "service target unavailable: "+err.Error())
-		return
+	var conn net.Conn
+	var service config.Service
+	if internal, ok := n.internalService(req.Service, packet.Src); ok {
+		conn = internal
+	} else {
+		var found bool
+		service, found = n.service(req.Service)
+		if !found {
+			n.sendOpenError(packet, "service not found")
+			return
+		}
+		if !n.allowed(service, packet.Src) {
+			n.sendOpenError(packet, "source is not allowed to access this service")
+			return
+		}
+		dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 20 * time.Second}
+		var err error
+		conn, err = dialer.DialContext(n.ctx, "tcp", service.Target)
+		if err != nil {
+			n.sendOpenError(packet, "service target unavailable: "+err.Error())
+			return
+		}
 	}
 	eph, err := newEphemeralKey()
 	if err != nil {
@@ -353,7 +365,11 @@ func (n *Node) handleOpen(packet protocol.Packet) {
 		s.closeLocal(err.Error(), false)
 		return
 	}
-	n.addEvent("info", fmt.Sprintf("accepted stream %x from %s to service %s", packet.StreamID[:4], packet.Src.Short(), service.Name))
+	name := service.Name
+	if name == "" {
+		name = req.Service
+	}
+	n.addEvent("info", fmt.Sprintf("accepted stream %x from %s to service %s", packet.StreamID[:4], packet.Src.Short(), name))
 }
 
 func (n *Node) sendOpenError(open protocol.Packet, message string) {

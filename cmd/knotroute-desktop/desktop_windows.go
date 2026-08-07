@@ -607,6 +607,13 @@ func (a *desktopApp) integrationEnabled() bool {
 	return json.Unmarshal(data, &state) == nil && state.Enabled
 }
 func (a *desktopApp) enableIntegration() error {
+	answer := messageBox(a.hwnd, "KnotRoute", "Enabling .knot integration will install the local KnotRoute Root CA into your Windows user Trusted Root store. It is used only to issue certificates for .knot names and its private key stays on this device. Continue?", mbYesNo|mbIconWarning)
+	if answer != idYes {
+		return errors.New("system integration was cancelled")
+	}
+	if err := a.runCACommand("install"); err != nil {
+		return fmt.Errorf("install KnotRoute Root CA: %w", err)
+	}
 	current, exists := regQuery("AutoConfigURL")
 	pac := a.dashboardURL + "/proxy.pac"
 	if exists && current != "" && !strings.EqualFold(current, pac) {
@@ -660,6 +667,19 @@ func (a *desktopApp) disableIntegration() error {
 	data, _ = json.MarshalIndent(state, "", "  ")
 	_ = os.WriteFile(path, append(data, '\n'), 0o600)
 	refreshInternetSettings()
+	if err := a.runCACommand("uninstall"); err != nil {
+		return fmt.Errorf("proxy settings were restored, but removing the KnotRoute Root CA failed: %w", err)
+	}
+	return nil
+}
+
+func (a *desktopApp) runCACommand(action string) error {
+	cmd := exec.Command(a.daemonPath, "ca", action, "--config", a.configPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v: %s", err, bytes.TrimSpace(out))
+	}
 	return nil
 }
 

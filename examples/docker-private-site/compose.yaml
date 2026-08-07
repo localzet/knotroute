@@ -1,0 +1,32 @@
+services:
+  app:
+    image: nginx:alpine
+    restart: unless-stopped
+    networks: [private]
+    # No host port is required. KnotRoute reaches app:80 over the Docker network.
+
+  knotroute:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.sidecar
+    restart: unless-stopped
+    depends_on: [app]
+    networks: [private]
+    volumes:
+      - knotroute-data:/data
+    ports:
+      - "7447:7447"
+    environment:
+      KNOTROUTE_LISTEN: "0.0.0.0:7447"
+      # Set an externally reachable endpoint when inbound peering is possible.
+      KNOTROUTE_ADVERTISE: ""
+      # Multiple beacons may be comma-separated.
+      KNOTROUTE_BEACONS: ""
+      KNOTROUTE_SERVICE_NAME: "web"
+      KNOTROUTE_SERVICE_TARGET: "app:80"
+
+networks:
+  private:
+
+volumes:
+  knotroute-data:

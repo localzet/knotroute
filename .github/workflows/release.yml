@@ -5,16 +5,49 @@ on:
 permissions:
   contents: write
 jobs:
-  release:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with:
-          go-version: '1.23.x'
+        with: { go-version: '1.23.x' }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-37" "build-tools;36.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '9.5.0' }
+      - run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          gomobile init
+          gomobile bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
+      - working-directory: android
+        run: gradle --no-daemon :app:assembleDebug :app:assembleRelease
+      - run: |
+          mkdir -p android-dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk "android-dist/knotroute_${GITHUB_REF_NAME#v}_android_debug.apk"
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk "android-dist/knotroute_${GITHUB_REF_NAME#v}_android_release-unsigned.apk"
+          cp android/app/libs/knotroute-client.aar "android-dist/knotroute-client_${GITHUB_REF_NAME#v}_android.aar"
+      - uses: actions/upload-artifact@v4
+        with: { name: android-release, path: android-dist/* }
+
+  release:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.23.x' }
       - run: go test -race ./...
       - name: Build archives
         run: VERSION="${GITHUB_REF_NAME#v}" ./scripts/build-release.sh
+      - uses: actions/download-artifact@v4
+        with: { name: android-release, path: dist }
+      - name: Refresh checksums
+        run: |
+          rm -f dist/SHA256SUMS
+          (cd dist && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS)
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

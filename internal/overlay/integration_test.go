@@ -90,6 +90,7 @@ func startTestNode(t *testing.T, ctx context.Context, cfg config.Config) *Node {
 	cfg.Dashboard = ""
 	cfg.Proxy.SOCKS = ""
 	cfg.Proxy.HTTP = ""
+	cfg.Discovery.Enabled = false
 	if cfg.Routing.LSAInterval == "20s" {
 		cfg.Routing = config.Routing{LSAInterval: "200ms", LSATTL: "3s", MaxHops: 16}
 	}

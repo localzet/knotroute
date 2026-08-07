@@ -21,9 +21,13 @@ type RouteStatus struct {
 }
 
 type ServiceStatus struct {
-	Name        string `json:"name"`
-	Target      string `json:"target"`
-	Description string `json:"description,omitempty"`
+	Name         string   `json:"name"`
+	Target       string   `json:"target"`
+	Description  string   `json:"description,omitempty"`
+	Published    bool     `json:"published"`
+	ServiceID    string   `json:"service_id,omitempty"`
+	Domain       string   `json:"domain,omitempty"`
+	Introduction []string `json:"introduction_points,omitempty"`
 }
 
 type ForwardStatus struct {
@@ -43,6 +47,7 @@ type Event struct {
 type Status struct {
 	Name           string          `json:"name"`
 	Version        string          `json:"version"`
+	NetworkID      string          `json:"network_id"`
 	NodeID         string          `json:"node_id"`
 	Domain         string          `json:"domain"`
 	ShortID        string          `json:"short_id"`
@@ -55,6 +60,8 @@ type Status struct {
 	Aliases        []AliasStatus   `json:"aliases"`
 	Proxy          ProxyStatus     `json:"proxy"`
 	ActiveStreams  int             `json:"active_streams"`
+	ActiveCircuits int             `json:"active_circuits"`
+	Descriptors    int             `json:"descriptors"`
 	BytesSent      uint64          `json:"bytes_sent"`
 	BytesReceived  uint64          `json:"bytes_received"`
 	FramesSent     uint64          `json:"frames_sent"`
@@ -64,7 +71,8 @@ type Status struct {
 
 type AliasStatus struct {
 	Name        string `json:"name"`
-	Node        string `json:"node"`
+	Kind        string `json:"kind"`
+	Target      string `json:"target"`
 	Domain      string `json:"domain"`
 	Description string `json:"description,omitempty"`
 }

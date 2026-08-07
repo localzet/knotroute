@@ -1,0 +1,3 @@
+-keep class knotmobile.** { *; }
+-keep class go.** { *; }
+-dontwarn go.**

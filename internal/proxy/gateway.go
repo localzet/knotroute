@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -15,21 +16,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/localzet/knotroute/internal/certauth"
 	"github.com/localzet/knotroute/internal/naming"
 	"github.com/localzet/knotroute/internal/nodeid"
+	"github.com/localzet/knotroute/internal/serviceid"
 )
 
 type OverlayDialer func(context.Context, nodeid.ID, string) (net.Conn, error)
+type ServiceDialer func(context.Context, serviceid.ID) (net.Conn, error)
 
 type EventFunc func(level, message string)
 
 type Gateway struct {
-	Aliases      []naming.Alias
-	Direct       bool
-	DefaultHTTP  string
-	DefaultHTTPS string
-	DialOverlay  OverlayDialer
-	Event        EventFunc
+	Aliases        []naming.Alias
+	Direct         bool
+	DefaultHTTP    string
+	DefaultHTTPS   string
+	DialOverlay    OverlayDialer
+	DialService    ServiceDialer
+	Authority      *certauth.Authority
+	InterceptHTTPS bool
+	Event          EventFunc
 
 	mu          sync.Mutex
 	listeners   []net.Listener
@@ -132,9 +139,14 @@ func (g *Gateway) dial(ctx context.Context, host, port, scheme string) (net.Conn
 		if err != nil {
 			return nil, "", err
 		}
+		if resolved.Kind == naming.AddressService {
+			if g.DialService == nil {
+				return nil, "", errors.New("service dialer is unavailable")
+			}
+			conn, err := g.DialService(ctx, resolved.ServiceID)
+			return conn, resolved.ServiceID.Short(), err
+		}
 		service := resolved.Service
-		// A bare node address has context-sensitive defaults, while an explicit
-		// service label always wins.
 		if service == naming.DefaultService {
 			if scheme == "https" && g.DefaultHTTPS != "" {
 				service = g.DefaultHTTPS
@@ -316,6 +328,14 @@ func (g *Gateway) handleConnect(ctx context.Context, client net.Conn, req *http.
 		host = req.Host
 		port = "443"
 	}
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if g.InterceptHTTPS && g.Authority != nil && strings.HasSuffix(host, naming.Suffix) {
+		resolved, resolveErr := naming.ResolveHost(host, g.Aliases)
+		if resolveErr == nil && resolved.Kind == naming.AddressService {
+			g.handleKnotTLS(ctx, client, host, resolved.ServiceID)
+			return
+		}
+	}
 	openCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	upstream, target, err := g.dial(openCtx, host, port, "https")
@@ -332,6 +352,40 @@ func (g *Gateway) handleConnect(ctx context.Context, client net.Conn, req *http.
 	_ = upstream.SetDeadline(time.Time{})
 	g.event("info", "CONNECT "+req.Host+" -> "+target)
 	proxyBoth(client, upstream)
+}
+
+func (g *Gateway) handleKnotTLS(ctx context.Context, client net.Conn, host string, service serviceid.ID) {
+	if g.DialService == nil {
+		writeProxyError(client, http.StatusBadGateway, "service dialer is unavailable")
+		return
+	}
+	openCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	upstream, err := g.DialService(openCtx, service)
+	if err != nil {
+		g.event("warn", "Knot TLS "+host+": "+err.Error())
+		writeProxyError(client, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer upstream.Close()
+	cert, err := g.Authority.Certificate(host)
+	if err != nil {
+		writeProxyError(client, http.StatusBadGateway, err.Error())
+		return
+	}
+	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: KnotRoute\r\n\r\n"); err != nil {
+		return
+	}
+	_ = client.SetDeadline(time.Now().Add(20 * time.Second))
+	tlsClient := tls.Server(client, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12, NextProtos: []string{"http/1.1"}})
+	if err := tlsClient.HandshakeContext(openCtx); err != nil {
+		g.event("warn", "Knot TLS handshake "+host+": "+err.Error())
+		return
+	}
+	_ = tlsClient.SetDeadline(time.Time{})
+	_ = upstream.SetDeadline(time.Time{})
+	g.event("info", "HTTPS terminated locally for "+host+" -> "+service.Short())
+	proxyBoth(tlsClient, upstream)
 }
 
 func splitRequestHost(req *http.Request) (string, string) {

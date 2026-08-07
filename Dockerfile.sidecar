@@ -1,0 +1,13 @@
+FROM golang:1.23-alpine AS build
+RUN apk add --no-cache ca-certificates
+WORKDIR /src
+COPY go.mod ./
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knotroute-sidecar ./cmd/knotroute-sidecar
+
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /out/knotroute-sidecar /knotroute-sidecar
+VOLUME ["/data"]
+EXPOSE 7447 9090
+ENTRYPOINT ["/knotroute-sidecar"]

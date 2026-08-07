@@ -15,10 +15,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/localzet/knotroute/internal/certauth"
 	"github.com/localzet/knotroute/internal/config"
 	"github.com/localzet/knotroute/internal/identity"
+	"github.com/localzet/knotroute/internal/invite"
 	"github.com/localzet/knotroute/internal/naming"
+	"github.com/localzet/knotroute/internal/networkid"
 	"github.com/localzet/knotroute/internal/overlay"
+	"github.com/localzet/knotroute/internal/serviceidentity"
 )
 
 func main() {
@@ -42,6 +46,12 @@ func main() {
 		err = aliasCommand(os.Args[2:])
 	case "doctor":
 		err = doctorCommand(os.Args[2:])
+	case "ca":
+		err = caCommand(os.Args[2:])
+	case "network":
+		err = networkCommand(os.Args[2:])
+	case "invite":
+		err = inviteCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("KnotRoute %s (%s/%s)\n", overlay.Version, runtime.GOOS, runtime.GOARCH)
 	case "help", "--help", "-h":
@@ -68,10 +78,145 @@ Usage:
   knotroute alias export --config knotroute.json --name localzet [--out localzet.knot-alias.json]
   knotroute alias import --config knotroute.json --file localzet.knot-alias.json
   knotroute doctor [--config knotroute.json] [--probe]
+  knotroute ca init|path|fingerprint|install|uninstall [--config knotroute.json]
+  knotroute network create
+  knotroute invite export|import [--config knotroute.json]
   knotroute version
 
 Start with "knotroute init", edit the generated JSON, then run the node.
 `, overlay.Version)
+}
+
+func networkCommand(args []string) error {
+	if len(args) != 1 || args[0] != "create" {
+		return errors.New("network expects create")
+	}
+	id, err := networkid.Random()
+	if err != nil {
+		return err
+	}
+	fmt.Println(id.String())
+	return nil
+}
+
+func inviteCommand(args []string) error {
+	if len(args) == 0 {
+		return errors.New("invite expects export or import")
+	}
+	switch args[0] {
+	case "export":
+		fs := flag.NewFlagSet("invite export", flag.ContinueOnError)
+		path := fs.String("config", "knotroute.json", "configuration file")
+		out := fs.String("out", "network.knotinvite", "output invite file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		cfg, id, err := loadNodeFiles(*path)
+		if err != nil {
+			return err
+		}
+		network, err := cfg.Network()
+		if err != nil {
+			return err
+		}
+		record, err := invite.New(id, network, cfg.Discovery.Beacons, cfg.Peers, time.Now())
+		if err != nil {
+			return err
+		}
+		raw, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(*out, append(raw, '\n'), 0o644); err != nil {
+			return err
+		}
+		fmt.Println("Created", *out)
+		return nil
+	case "import":
+		fs := flag.NewFlagSet("invite import", flag.ContinueOnError)
+		path := fs.String("config", "knotroute.json", "configuration file")
+		file := fs.String("file", "", "invite file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *file == "" {
+			return errors.New("--file is required")
+		}
+		raw, err := os.ReadFile(*file)
+		if err != nil {
+			return err
+		}
+		var record invite.Invite
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return err
+		}
+		network, err := record.Verify(time.Now())
+		if err != nil {
+			return err
+		}
+		cfg, err := config.Load(*path)
+		if err != nil {
+			return err
+		}
+		cfg.NetworkID = network.String()
+		cfg.Discovery.Beacons = append([]string(nil), record.Beacons...)
+		cfg.Peers = append([]config.Peer(nil), record.Peers...)
+		cfg.Path = ""
+		if err := config.SaveAtomic(*path, cfg); err != nil {
+			return err
+		}
+		fmt.Println("Imported network", network.String())
+		return nil
+	default:
+		return fmt.Errorf("unknown invite command %q", args[0])
+	}
+}
+
+func caCommand(args []string) error {
+	if len(args) == 0 {
+		return errors.New("ca expects init, path, fingerprint, install, or uninstall")
+	}
+	fs := flag.NewFlagSet("ca "+args[0], flag.ContinueOnError)
+	path := fs.String("config", "knotroute.json", "configuration file")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	cfg, err := config.Load(*path)
+	if err != nil {
+		return err
+	}
+	if !cfg.CA.Enabled {
+		return errors.New("local CA is disabled in the configuration")
+	}
+	authority, err := certauth.LoadOrCreate(cfg.CA.Directory)
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "init":
+		fmt.Println(authority.RootPath())
+		return nil
+	case "path":
+		fmt.Println(authority.RootPath())
+		return nil
+	case "fingerprint":
+		fmt.Println(authority.Fingerprint())
+		return nil
+	case "install":
+		if err := certauth.InstallUserRoot(authority); err != nil {
+			return err
+		}
+		fmt.Println("Installed", authority.RootPath())
+		return nil
+	case "uninstall":
+		if err := certauth.UninstallUserRoot(authority); err != nil {
+			return err
+		}
+		fmt.Println("Removed", authority.Fingerprint())
+		return nil
+	default:
+		return fmt.Errorf("unknown ca command %q", args[0])
+	}
 }
 
 func initCommand(args []string) error {
@@ -187,17 +332,35 @@ func idCommand(args []string) error {
 func addressCommand(args []string) error {
 	fs := flag.NewFlagSet("address", flag.ContinueOnError)
 	path := fs.String("config", "knotroute.json", "configuration file")
-	service := fs.String("service", "", "optional published service")
+	service := fs.String("service", "", "optional service name")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	_, id, err := loadNodeFiles(*path)
+	cfg, id, err := loadNodeFiles(*path)
 	if err != nil {
 		return err
 	}
 	if *service == "" {
 		fmt.Println(naming.CanonicalDomain(id.ID))
 		return nil
+	}
+	for _, svc := range cfg.Services {
+		if svc.Name != *service {
+			continue
+		}
+		if svc.Publish {
+			identityPath := svc.IdentityFile
+			if identityPath == "" {
+				identityPath = filepath.Join(filepath.Dir(cfg.Path), "services", svc.Name+".identity.json")
+			}
+			sid, err := serviceidentity.LoadOrCreate(identityPath)
+			if err != nil {
+				return err
+			}
+			fmt.Println(naming.ServiceCanonicalDomain(sid.ID))
+			return nil
+		}
+		break
 	}
 	domain, err := naming.ServiceDomain(*service, id.ID)
 	if err != nil {
@@ -224,7 +387,11 @@ func resolveCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("node=%s\nservice=%s\ncanonical=%t\n", resolved.Node.String(), resolved.Service, resolved.Canonical)
+	if resolved.Kind == naming.AddressService {
+		fmt.Printf("kind=service\nservice_id=%s\ncanonical=%t\n", resolved.ServiceID.String(), resolved.Canonical)
+	} else {
+		fmt.Printf("kind=node\nnode=%s\nservice=%s\ncanonical=%t\n", resolved.Node.String(), resolved.Service, resolved.Canonical)
+	}
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/localzet/knotroute/internal/naming"
+	"github.com/localzet/knotroute/internal/networkid"
 )
 
 type Peer struct {
@@ -20,10 +21,14 @@ type Peer struct {
 }
 
 type Service struct {
-	Name        string   `json:"name"`
-	Target      string   `json:"target"`
-	Description string   `json:"description,omitempty"`
-	Allow       []string `json:"allow,omitempty"`
+	Name         string            `json:"name"`
+	Target       string            `json:"target"`
+	Description  string            `json:"description,omitempty"`
+	Allow        []string          `json:"allow,omitempty"`
+	Publish      bool              `json:"publish,omitempty"`
+	IdentityFile string            `json:"identity_file,omitempty"`
+	IntroCount   int               `json:"intro_count,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 type Forward struct {
@@ -32,10 +37,37 @@ type Forward struct {
 	Service string `json:"service"`
 }
 
+type Discovery struct {
+	Enabled      bool     `json:"enabled"`
+	Beacons      []string `json:"beacons,omitempty"`
+	LAN          bool     `json:"lan"`
+	PeerExchange bool     `json:"peer_exchange"`
+	CacheFile    string   `json:"cache_file,omitempty"`
+	Interval     string   `json:"interval"`
+}
+
+type Privacy struct {
+	CircuitHops    int    `json:"circuit_hops"`
+	CircuitTimeout string `json:"circuit_timeout"`
+}
+
+type Directory struct {
+	Replicas        int    `json:"replicas"`
+	DescriptorTTL   string `json:"descriptor_ttl"`
+	PublishInterval string `json:"publish_interval"`
+	LookupTimeout   string `json:"lookup_timeout"`
+}
+
 type Routing struct {
 	LSAInterval string `json:"lsa_interval"`
 	LSATTL      string `json:"lsa_ttl"`
 	MaxHops     int    `json:"max_hops"`
+}
+
+type CertificateAuthority struct {
+	Enabled        bool   `json:"enabled"`
+	Directory      string `json:"directory"`
+	InterceptHTTPS bool   `json:"intercept_https"`
 }
 
 type Proxy struct {
@@ -47,34 +79,44 @@ type Proxy struct {
 }
 
 type Config struct {
-	IdentityFile string         `json:"identity_file"`
-	Listen       []string       `json:"listen"`
-	Advertise    []string       `json:"advertise,omitempty"`
-	Peers        []Peer         `json:"peers,omitempty"`
-	Services     []Service      `json:"services,omitempty"`
-	Forwards     []Forward      `json:"forwards,omitempty"`
-	Aliases      []naming.Alias `json:"aliases,omitempty"`
-	Proxy        Proxy          `json:"proxy"`
-	Dashboard    string         `json:"dashboard"`
-	Routing      Routing        `json:"routing"`
+	NetworkID    string               `json:"network_id"`
+	IdentityFile string               `json:"identity_file"`
+	Listen       []string             `json:"listen"`
+	Advertise    []string             `json:"advertise,omitempty"`
+	Peers        []Peer               `json:"peers,omitempty"`
+	Services     []Service            `json:"services,omitempty"`
+	Forwards     []Forward            `json:"forwards,omitempty"`
+	Aliases      []naming.Alias       `json:"aliases,omitempty"`
+	Proxy        Proxy                `json:"proxy"`
+	CA           CertificateAuthority `json:"ca"`
+	Dashboard    string               `json:"dashboard"`
+	Routing      Routing              `json:"routing"`
+	Discovery    Discovery            `json:"discovery"`
+	Directory    Directory            `json:"directory"`
+	Privacy      Privacy              `json:"privacy"`
 
 	Path string `json:"-"`
 }
 
 func Default() Config {
 	return Config{
+		NetworkID:    networkid.Default().String(),
 		IdentityFile: "identity.json",
 		Listen:       []string{"0.0.0.0:7447"},
 		Dashboard:    "127.0.0.1:8484",
+		CA:           CertificateAuthority{Enabled: true, Directory: "ca", InterceptHTTPS: true},
 		Proxy: Proxy{
 			SOCKS: "127.0.0.1:9477", HTTP: "127.0.0.1:9478", Direct: true,
 			DefaultHTTP: "http", DefaultHTTPS: "https",
 		},
-		Routing:  Routing{LSAInterval: "20s", LSATTL: "90s", MaxHops: 16},
-		Services: []Service{},
-		Forwards: []Forward{},
-		Peers:    []Peer{},
-		Aliases:  []naming.Alias{},
+		Routing:   Routing{LSAInterval: "20s", LSATTL: "90s", MaxHops: 16},
+		Discovery: Discovery{Enabled: true, LAN: true, PeerExchange: true, CacheFile: "peers.json", Interval: "30s"},
+		Directory: Directory{Replicas: 5, DescriptorTTL: "10m", PublishInterval: "2m", LookupTimeout: "8s"},
+		Privacy:   Privacy{CircuitHops: 3, CircuitTimeout: "15s"},
+		Services:  []Service{},
+		Forwards:  []Forward{},
+		Peers:     []Peer{},
+		Aliases:   []naming.Alias{},
 	}
 }
 
@@ -94,6 +136,17 @@ func Load(path string) (Config, error) {
 	cfg.Path = abs
 	if !filepath.IsAbs(cfg.IdentityFile) {
 		cfg.IdentityFile = filepath.Join(filepath.Dir(abs), cfg.IdentityFile)
+	}
+	if cfg.CA.Directory != "" && !filepath.IsAbs(cfg.CA.Directory) {
+		cfg.CA.Directory = filepath.Join(filepath.Dir(abs), cfg.CA.Directory)
+	}
+	if cfg.Discovery.CacheFile != "" && !filepath.IsAbs(cfg.Discovery.CacheFile) {
+		cfg.Discovery.CacheFile = filepath.Join(filepath.Dir(abs), cfg.Discovery.CacheFile)
+	}
+	for i := range cfg.Services {
+		if cfg.Services[i].IdentityFile != "" && !filepath.IsAbs(cfg.Services[i].IdentityFile) {
+			cfg.Services[i].IdentityFile = filepath.Join(filepath.Dir(abs), cfg.Services[i].IdentityFile)
+		}
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -151,6 +204,9 @@ var serviceName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 func (c Config) Validate() error {
 	var errs []error
+	if _, err := networkid.Parse(c.NetworkID); err != nil {
+		errs = append(errs, fmt.Errorf("network_id: %w", err))
+	}
 	if strings.TrimSpace(c.IdentityFile) == "" {
 		errs = append(errs, errors.New("identity_file is required"))
 	}
@@ -189,6 +245,11 @@ func (c Config) Validate() error {
 		if err := validateAddress(fmt.Sprintf("services[%d].target", i), s.Target); err != nil {
 			errs = append(errs, err)
 		}
+		if s.Publish {
+			if s.IntroCount < 0 || s.IntroCount > 8 {
+				errs = append(errs, fmt.Errorf("services[%d].intro_count must be 0..8", i))
+			}
+		}
 		for _, allowed := range s.Allow {
 			if allowed != "*" {
 				if _, err := naming.ParseNodeReference(allowed); err != nil {
@@ -219,6 +280,9 @@ func (c Config) Validate() error {
 		}
 		seenAliases[key] = struct{}{}
 	}
+	if c.CA.Enabled && strings.TrimSpace(c.CA.Directory) == "" {
+		errs = append(errs, errors.New("ca.directory is required when CA is enabled"))
+	}
 	if c.Proxy.SOCKS != "" {
 		if err := validateAddress("proxy.socks", c.Proxy.SOCKS); err != nil {
 			errs = append(errs, err)
@@ -246,6 +310,33 @@ func (c Config) Validate() error {
 			errs = append(errs, err)
 		}
 	}
+	if c.Discovery.Enabled {
+		if c.Discovery.Interval == "" {
+			c.Discovery.Interval = "30s"
+		}
+		if d, err := time.ParseDuration(c.Discovery.Interval); err != nil || d < 5*time.Second {
+			errs = append(errs, errors.New("discovery.interval must be at least 5s"))
+		}
+		for i, u := range c.Discovery.Beacons {
+			if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+				errs = append(errs, fmt.Errorf("discovery.beacons[%d] must use http or https", i))
+			}
+		}
+	}
+	if c.Privacy.CircuitHops < 1 || c.Privacy.CircuitHops > 8 {
+		errs = append(errs, errors.New("privacy.circuit_hops must be 1..8"))
+	}
+	if d, err := time.ParseDuration(c.Privacy.CircuitTimeout); err != nil || d <= 0 {
+		errs = append(errs, errors.New("privacy.circuit_timeout must be a positive duration"))
+	}
+	if c.Directory.Replicas < 1 || c.Directory.Replicas > 16 {
+		errs = append(errs, errors.New("directory.replicas must be 1..16"))
+	}
+	for name, raw := range map[string]string{"descriptor_ttl": c.Directory.DescriptorTTL, "publish_interval": c.Directory.PublishInterval, "lookup_timeout": c.Directory.LookupTimeout} {
+		if d, err := time.ParseDuration(raw); err != nil || d <= 0 {
+			errs = append(errs, fmt.Errorf("directory.%s must be a positive duration", name))
+		}
+	}
 	interval, err := c.LSAInterval()
 	if err != nil {
 		errs = append(errs, fmt.Errorf("routing.lsa_interval: %w", err))
@@ -261,6 +352,45 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("routing.max_hops must be between 2 and 64"))
 	}
 	return errors.Join(errs...)
+}
+
+func (c Config) Network() (networkid.ID, error) { return networkid.Parse(c.NetworkID) }
+func (c Config) DiscoveryInterval() time.Duration {
+	d, err := time.ParseDuration(c.Discovery.Interval)
+	if err != nil || d <= 0 {
+		return 30 * time.Second
+	}
+	return d
+}
+
+func (c Config) DescriptorTTL() time.Duration {
+	d, _ := time.ParseDuration(c.Directory.DescriptorTTL)
+	if d <= 0 {
+		return 10 * time.Minute
+	}
+	return d
+}
+func (c Config) DescriptorPublishInterval() time.Duration {
+	d, _ := time.ParseDuration(c.Directory.PublishInterval)
+	if d <= 0 {
+		return 2 * time.Minute
+	}
+	return d
+}
+func (c Config) DescriptorLookupTimeout() time.Duration {
+	d, _ := time.ParseDuration(c.Directory.LookupTimeout)
+	if d <= 0 {
+		return 8 * time.Second
+	}
+	return d
+}
+
+func (c Config) CircuitTimeout() time.Duration {
+	d, _ := time.ParseDuration(c.Privacy.CircuitTimeout)
+	if d <= 0 {
+		return 15 * time.Second
+	}
+	return d
 }
 
 func validateAddress(field, address string) error {

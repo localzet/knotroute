@@ -64,7 +64,7 @@ jobs:
         with: { go-version: '1.25.x' }
       - run: go test -race ./...
       - name: Build archives
-        run: VERSION="${GITHUB_REF_NAME#v}" ./scripts/build-release.sh
+        run: VERSION="${GITHUB_REF_NAME#v}" sh ./scripts/build-release.sh
       - uses: actions/download-artifact@v4
         with: { name: android-release, path: dist }
       - name: Refresh checksums

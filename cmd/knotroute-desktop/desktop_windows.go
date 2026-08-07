@@ -110,6 +110,7 @@ var (
 	procGlobalAlloc        = kernel32.NewProc("GlobalAlloc")
 	procGlobalLock         = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock       = kernel32.NewProc("GlobalUnlock")
+	procRtlMoveMemory      = kernel32.NewProc("RtlMoveMemory")
 	procInternetSetOptionW = wininet.NewProc("InternetSetOptionW")
 )
 
@@ -759,7 +760,9 @@ func setClipboard(text string) error {
 	if ptr == 0 {
 		return err
 	}
-	copy(unsafe.Slice((*uint16)(unsafe.Pointer(ptr)), len(utf)), utf)
+	if len(utf) > 0 {
+		procRtlMoveMemory.Call(ptr, uintptr(unsafe.Pointer(&utf[0])), size)
+	}
 	procGlobalUnlock.Call(h)
 	if r, _, err := procSetClipboardData.Call(cfUnicodeText, h); r == 0 {
 		return err

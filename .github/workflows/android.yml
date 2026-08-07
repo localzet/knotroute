@@ -29,7 +29,9 @@ jobs:
       - name: Build Go Android client AAR
         run: |
           export PATH="$(go env GOPATH)/bin:$PATH"
+          mkdir -p android/app/libs
           gomobile bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
+          test -s android/app/libs/knotroute-client.aar
       - name: Build Android app
         working-directory: android
         run: gradle --no-daemon :app:assembleDebug :app:assembleRelease

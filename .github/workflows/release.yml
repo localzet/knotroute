@@ -7,28 +7,49 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.23.x' }
+        with: { go-version: '1.25.x' }
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-37" "build-tools;36.0.0" "platform-tools"
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '9.5.0' }
-      - run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
-          gomobile init
+      - name: Install pinned Go mobile tools
+        run: |
+          go mod download
+          go install tool
+      - name: Build Android client AAR
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
           gomobile bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
       - working-directory: android
-        run: gradle --no-daemon :app:assembleDebug :app:assembleRelease
-      - run: |
+        run: gradle --no-daemon -PknotVersion="${GITHUB_REF_NAME#v}" :app:assembleDebug :app:assembleRelease
+      - name: Prepare Android release artifacts
+        run: |
           mkdir -p android-dist
           cp android/app/build/outputs/apk/debug/app-debug.apk "android-dist/knotroute_${GITHUB_REF_NAME#v}_android_debug.apk"
           cp android/app/build/outputs/apk/release/app-release-unsigned.apk "android-dist/knotroute_${GITHUB_REF_NAME#v}_android_release-unsigned.apk"
           cp android/app/libs/knotroute-client.aar "android-dist/knotroute-client_${GITHUB_REF_NAME#v}_android.aar"
+      - name: Sign Android release APK
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/knotroute-release.jks"
+          apksigner sign \
+            --ks "$RUNNER_TEMP/knotroute-release.jks" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "android-dist/knotroute_${GITHUB_REF_NAME#v}_android.apk" \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+          apksigner verify --verbose "android-dist/knotroute_${GITHUB_REF_NAME#v}_android.apk"
       - uses: actions/upload-artifact@v4
         with: { name: android-release, path: android-dist/* }
 
@@ -38,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.23.x' }
+        with: { go-version: '1.25.x' }
       - run: go test -race ./...
       - name: Build archives
         run: VERSION="${GITHUB_REF_NAME#v}" ./scripts/build-release.sh

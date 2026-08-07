@@ -1,0 +1,227 @@
+diff --git a/scripts/build-android.ps1 b/scripts/build-android.ps1
+index 94e2b9c..8b8a991 100644
+--- a/scripts/build-android.ps1
++++ b/scripts/build-android.ps1
+@@ -2,13 +2,17 @@ $ErrorActionPreference = "Stop"
+ $Root = Split-Path -Parent $PSScriptRoot
+ $Version = if ($env:VERSION) { $env:VERSION } else { "3.0.0" }
+ if (-not $env:ANDROID_HOME) { throw "ANDROID_HOME must point to the Android SDK" }
+-if (-not (Get-Command gomobile -ErrorAction SilentlyContinue)) { throw "gomobile is required: go install golang.org/x/mobile/cmd/gomobile@latest" }
+ $Gradle = if (Test-Path "$Root/android/gradlew.bat") { "$Root/android/gradlew.bat" } elseif (Get-Command gradle -ErrorAction SilentlyContinue) { (Get-Command gradle).Source } else { throw "Gradle 9.5+ is required (Android Studio can provide it)" }
+ New-Item -ItemType Directory -Force "$Root/android/app/libs", "$Root/dist" | Out-Null
+ Push-Location $Root
+-try { gomobile bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile } finally { Pop-Location }
++try {
++    go mod download
++    go install tool
++    $GoMobile = Join-Path (go env GOPATH) "bin/gomobile.exe"
++    & $GoMobile bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
++} finally { Pop-Location }
+ Push-Location "$Root/android"
+-try { & $Gradle --no-daemon :app:assembleDebug :app:assembleRelease } finally { Pop-Location }
++try { & $Gradle --no-daemon "-PknotVersion=$Version" :app:assembleDebug :app:assembleRelease } finally { Pop-Location }
+ Copy-Item "$Root/android/app/build/outputs/apk/debug/app-debug.apk" "$Root/dist/knotroute_${Version}_android_debug.apk"
+ Copy-Item "$Root/android/app/build/outputs/apk/release/app-release-unsigned.apk" "$Root/dist/knotroute_${Version}_android_release-unsigned.apk"
+ Copy-Item "$Root/android/app/libs/knotroute-client.aar" "$Root/dist/knotroute-client_${Version}_android.aar"
+diff --git a/scripts/build-android.sh b/scripts/build-android.sh
+index 3f5193e..5e2d358 100644
+--- a/scripts/build-android.sh
++++ b/scripts/build-android.sh
+@@ -3,7 +3,6 @@ set -eu
+ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ VERSION="${VERSION:-3.0.0}"
+ : "${ANDROID_HOME:?ANDROID_HOME must point to the Android SDK}"
+-command -v gomobile >/dev/null 2>&1 || { echo "gomobile is required: go install golang.org/x/mobile/cmd/gomobile@latest" >&2; exit 1; }
+ if [ -x "$ROOT/android/gradlew" ]; then
+   GRADLE="$ROOT/android/gradlew"
+ elif command -v gradle >/dev/null 2>&1; then
+@@ -14,9 +13,11 @@ else
+ fi
+ mkdir -p "$ROOT/android/app/libs" "$ROOT/dist"
+ cd "$ROOT"
+-gomobile bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
++go mod download
++go install tool
++"$(go env GOPATH)/bin/gomobile" bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
+ cd android
+-"$GRADLE" --no-daemon :app:assembleDebug :app:assembleRelease
++"$GRADLE" --no-daemon -PknotVersion="$VERSION" :app:assembleDebug :app:assembleRelease
+ cp app/build/outputs/apk/debug/app-debug.apk "$ROOT/dist/knotroute_${VERSION}_android_debug.apk"
+ cp app/build/outputs/apk/release/app-release-unsigned.apk "$ROOT/dist/knotroute_${VERSION}_android_release-unsigned.apk"
+ cp app/libs/knotroute-client.aar "$ROOT/dist/knotroute-client_${VERSION}_android.aar"
+diff --git a/.github/workflows/docker.yml b/.github/workflows/docker.yml
+new file mode 100644
+--- /dev/null
++++ b/.github/workflows/docker.yml
+@@ -0,0 +1,57 @@
++name: Containers
++
++on:
++  push:
++    branches: [main]
++    tags: ['v*']
++
++permissions:
++  contents: read
++  packages: write
++
++jobs:
++  publish:
++    runs-on: ubuntu-latest
++    strategy:
++      fail-fast: false
++      matrix:
++        include:
++          - component: node
++            image: ghcr.io/localzet/knotroute
++            dockerfile: Dockerfile
++          - component: sidecar
++            image: ghcr.io/localzet/knotroute-sidecar
++            dockerfile: Dockerfile.sidecar
++          - component: beacon
++            image: ghcr.io/localzet/knotroute-beacon
++            dockerfile: Dockerfile.beacon
++    steps:
++      - uses: actions/checkout@v4
++      - uses: docker/setup-buildx-action@v3
++      - uses: docker/login-action@v3
++        with:
++          registry: ghcr.io
++          username: ${{ github.actor }}
++          password: ${{ secrets.GITHUB_TOKEN }}
++      - id: meta
++        uses: docker/metadata-action@v5
++        with:
++          images: ${{ matrix.image }}
++          tags: |
++            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
++            type=semver,pattern={{version}}
++            type=semver,pattern={{major}}.{{minor}}
++            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
++          labels: |
++            org.opencontainers.image.title=KnotRoute ${{ matrix.component }}
++            org.opencontainers.image.description=KnotRoute encrypted overlay network component
++      - uses: docker/build-push-action@v6
++        with:
++          context: .
++          file: ${{ matrix.dockerfile }}
++          push: true
++          platforms: linux/amd64,linux/arm64
++          tags: ${{ steps.meta.outputs.tags }}
++          labels: ${{ steps.meta.outputs.labels }}
++          cache-from: type=gha,scope=${{ matrix.component }}
++          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+diff --git a/docs/publishing.md b/docs/publishing.md
+new file mode 100644
+--- /dev/null
++++ b/docs/publishing.md
+@@ -0,0 +1,109 @@
++# Publishing KnotRoute
++
++KnotRoute publishes two kinds of artifacts:
++
++1. GitHub Release artifacts: desktop/server archives, Android APKs, and the Android AAR SDK.
++2. OCI container images in GitHub Container Registry (GHCR).
++
++## Release versioning
++
++Do not move an already published tag. For a build/CI fix after `v3.0.1`, publish `v3.0.2`.
++
++```bash
++git tag v3.0.2
++git push origin v3.0.2
++```
++
++The `Release` workflow creates platform archives plus Android artifacts. The `Containers` workflow publishes three multi-architecture images:
++
++```text
++ghcr.io/localzet/knotroute:3.0.2
++ghcr.io/localzet/knotroute-sidecar:3.0.2
++ghcr.io/localzet/knotroute-beacon:3.0.2
++```
++
++It also publishes `3.0` and `latest` for a version tag. Pushes to `main` publish the `edge` tag.
++
++## Android signing
++
++The release workflow can sign the release APK when these repository secrets are configured:
++
++```text
++ANDROID_KEYSTORE_BASE64
++ANDROID_KEYSTORE_PASSWORD
++ANDROID_KEY_ALIAS
++ANDROID_KEY_PASSWORD
++```
++
++Create and keep the keystore outside the repository. Encode it for the secret with:
++
++```bash
++base64 -w0 knotroute-release.jks
++```
++
++If the secrets are absent, the workflow still publishes the debug APK, unsigned release APK, and AAR SDK.
++
++## GHCR visibility
++
++The workflow authenticates with the repository `GITHUB_TOKEN`; no PAT is required. After the first publish, verify the package visibility in GitHub Packages. If the images should be publicly pullable, set each package to Public and link it to the repository if GitHub did not do so automatically.
++
++## Production Beacon
++
++The Beacon HTTP API is normally placed behind HTTPS while the relay stays raw TCP:
++
++```yaml
++services:
++  beacon:
++    image: ghcr.io/localzet/knotroute-beacon:3.0.2
++    restart: unless-stopped
++    ports:
++      - "7447:7447"
++    expose:
++      - "8080"
++    volumes:
++      - knotroute-beacon:/data
++    environment:
++      KNOTROUTE_NETWORK_ID: "kn_..."
++      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
++      KNOTROUTE_BEACON_RELAY: "true"
++      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
++      KNOTROUTE_BEACON_RELAY_ADVERTISE: "relay.example.net:7447"
++
++volumes:
++  knotroute-beacon:
++```
++
++Route `https://beacon.example.net` to container port `8080` using Traefik/Caddy/nginx. Do not send TCP `7447` through an HTTP router.
++
++## Publish an existing application as a `.knot` service
++
++The application needs no public host port for KnotRoute:
++
++```yaml
++services:
++  app:
++    image: example/app:latest
++    networks: [knot]
++
++  knotroute:
++    image: ghcr.io/localzet/knotroute-sidecar:3.0.2
++    restart: unless-stopped
++    networks: [knot]
++    volumes:
++      - knotroute-data:/data
++    environment:
++      KNOTROUTE_NETWORK_ID: "kn_..."
++      KNOTROUTE_BEACONS: "https://beacon-a.example.net,https://beacon-b.example.net"
++      KNOTROUTE_SERVICE_NAME: "web"
++      KNOTROUTE_SERVICE_TARGET: "app:8080"
++
++networks:
++  knot:
++
++volumes:
++  knotroute-data:
++```
++
++The sidecar prints the generated canonical service address at startup. Retrieve it with `docker compose logs knotroute` and preserve the `/data` volume: deleting its service identity changes the `.knot` address.
++
++An application may simultaneously remain attached to a Traefik network for public Internet ingress and to a private KnotRoute network for `.knot` publication.

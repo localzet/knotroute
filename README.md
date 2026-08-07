@@ -231,7 +231,7 @@ The PAC script sends only `.knot` web destinations to KnotRoute and returns `DIR
 
 ### HTTPS
 
-When `ca.enabled` and `ca.intercept_https` are enabled, the local HTTP proxy terminates browser TLS **only for a canonical/known service-identity `.knot` hostname**. It presents a short-lived certificate issued by a per-device KnotRoute Root CA, then sends plaintext HTTP bytes into the already end-to-end encrypted KnotRoute service session.
+When `ca.enabled` and `ca.intercept_https` are enabled, the local HTTP proxy terminates browser TLS for every resolvable `.knot` hostname: canonical service identities, node-bound service names such as `web.<node>.knot`, and configured local aliases. It presents a short-lived certificate issued by a per-device KnotRoute Root CA, then sends plaintext HTTP bytes into the already authenticated/encrypted KnotRoute stream or rendezvous session.
 
 The CA private key never leaves the local device, and certificate issuance explicitly refuses non-`.knot` names.
 

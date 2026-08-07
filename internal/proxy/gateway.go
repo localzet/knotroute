@@ -329,12 +329,26 @@ func (g *Gateway) handleConnect(ctx context.Context, client net.Conn, req *http.
 		port = "443"
 	}
 	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
-	if g.InterceptHTTPS && g.Authority != nil && strings.HasSuffix(host, naming.Suffix) {
-		resolved, resolveErr := naming.ResolveHost(host, g.Aliases)
-		if resolveErr == nil && resolved.Kind == naming.AddressService {
-			g.handleKnotTLS(ctx, client, host, resolved.ServiceID)
+	if strings.HasSuffix(host, naming.Suffix) {
+		// Browser-facing HTTPS for .knot is a local compatibility layer. The
+		// upstream service is normally plain HTTP carried inside the authenticated
+		// KnotRoute stream/rendezvous session, so blindly tunnelling CONNECT bytes
+		// to a node-bound HTTP service produces ERR_SSL_PROTOCOL_ERROR. Intercept
+		// every resolvable .knot form (canonical service identity, node service,
+		// and local alias), not only canonical service identities.
+		if g.InterceptHTTPS && g.Authority != nil {
+			if _, resolveErr := naming.ResolveHost(host, g.Aliases); resolveErr != nil {
+				g.event("warn", "Knot TLS "+host+": "+resolveErr.Error())
+				writeProxyError(client, http.StatusBadGateway, resolveErr.Error())
+				return
+			}
+			g.handleKnotTLS(ctx, client, host, port)
 			return
 		}
+		message := "local .knot HTTPS requires ca.enabled=true, ca.intercept_https=true, and an available local CA"
+		g.event("warn", "CONNECT "+req.Host+": "+message)
+		writeProxyError(client, http.StatusBadGateway, message)
+		return
 	}
 	openCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -354,14 +368,10 @@ func (g *Gateway) handleConnect(ctx context.Context, client net.Conn, req *http.
 	proxyBoth(client, upstream)
 }
 
-func (g *Gateway) handleKnotTLS(ctx context.Context, client net.Conn, host string, service serviceid.ID) {
-	if g.DialService == nil {
-		writeProxyError(client, http.StatusBadGateway, "service dialer is unavailable")
-		return
-	}
+func (g *Gateway) handleKnotTLS(ctx context.Context, client net.Conn, host, port string) {
 	openCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	upstream, err := g.DialService(openCtx, service)
+	upstream, target, err := g.dial(openCtx, host, port, "https")
 	if err != nil {
 		g.event("warn", "Knot TLS "+host+": "+err.Error())
 		writeProxyError(client, http.StatusBadGateway, err.Error())
@@ -384,7 +394,7 @@ func (g *Gateway) handleKnotTLS(ctx context.Context, client net.Conn, host strin
 	}
 	_ = tlsClient.SetDeadline(time.Time{})
 	_ = upstream.SetDeadline(time.Time{})
-	g.event("info", "HTTPS terminated locally for "+host+" -> "+service.Short())
+	g.event("info", "HTTPS terminated locally for "+host+" -> "+target)
 	proxyBoth(tlsClient, upstream)
 }
 

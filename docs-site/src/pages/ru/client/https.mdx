@@ -20,6 +20,21 @@ remote .knot service
 
 Браузер доверяет локальному proxy, а KnotRoute core независимо проверяет service identity.
 
+
+## Какие адреса поддерживают HTTPS
+
+Локальное TLS-завершение применяется ко всем разрешаемым `.knot`-именам:
+
+```text
+https://<service-identity>.knot/
+https://web.<node-identity>.knot/
+https://<local-alias>.knot/
+```
+
+Для `service.node.knot` браузерный TLS завершается на клиенте, а внутрь KnotRoute передаётся обычный HTTP к выбранному service listener. Поэтому удалённому приложению не требуется собственный TLS только ради `.knot`.
+
+<Callout type="warning">Если клиент старой версии просто туннелирует CONNECT к plaintext HTTP service, браузер получает `ERR_SSL_PROTOCOL_ERROR`. Обновите клиент: это не ошибка сертификата и не требует включать TLS на sidecar target.</Callout>
+
 ## Что хранится на клиенте
 
 Локальный CA состоит из:

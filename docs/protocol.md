@@ -337,7 +337,7 @@ Recently discovered peers can be persisted and retried on a later start.
 
 The local CA is outside the overlay wire protocol.
 
-Each client device creates its own ECDSA P-256 root key/certificate and stores the private key locally. The HTTP CONNECT gateway may terminate browser TLS for `.knot` service-identity hostnames with a short-lived leaf certificate signed by this root.
+Each client device creates its own ECDSA P-256 root key/certificate and stores the private key locally. The HTTP CONNECT gateway may terminate browser TLS for any resolvable `.knot` hostname (canonical service identity, node-bound service name, or local alias) with a short-lived leaf certificate signed by this root.
 
 The certificate issuer refuses non-`.knot` names in code.
 

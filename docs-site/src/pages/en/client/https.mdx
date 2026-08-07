@@ -21,3 +21,17 @@ Do not click through certificate warnings. Verify CA installation, proxy use, sy
 ## Why not one network-wide CA
 
 A shared CA private key would create an unnecessary global secret. A local CA limits compromise impact to a single device and keeps Control/Beacon out of the certificate-authority role.
+
+## Which addresses support HTTPS
+
+Local TLS termination applies to every resolvable `.knot` hostname:
+
+```text
+https://<service-identity>.knot/
+https://web.<node-identity>.knot/
+https://<local-alias>.knot/
+```
+
+For `service.node.knot`, browser TLS terminates on the client and ordinary HTTP is carried to the selected service listener inside KnotRoute. The remote application does not need its own TLS listener just for `.knot`.
+
+<Callout type="warning">Older clients that blindly tunnel CONNECT to a plaintext HTTP service produce `ERR_SSL_PROTOCOL_ERROR`. Update the client; enabling TLS on the sidecar target is not the correct fix.</Callout>

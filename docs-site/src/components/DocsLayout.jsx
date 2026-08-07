@@ -8,7 +8,8 @@ import { Search } from './Search'
 export function DocsLayout({ children }) {
   const router = useRouter()
   const language = router.pathname.startsWith('/en') ? 'en' : 'ru'
-  const alternate = router.asPath.replace(/^\/(ru|en)/, `/${language === 'ru' ? 'en' : 'ru'}/`).replace(/^\/(ru|en)$/, `/${language === 'ru' ? 'en' : 'ru'}`)
+  const alternateLanguage = language === 'ru' ? 'en' : 'ru'
+  const alternate = router.asPath.replace(/^\/(ru|en)(?=\/|$)/, `/${alternateLanguage}`)
   return <>
     <Head><title>KnotRoute Docs</title><meta name="description" content="KnotRoute self-hosted encrypted overlay network documentation" /></Head>
     <div className="min-h-screen bg-ink text-slate-300">

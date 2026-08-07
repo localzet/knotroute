@@ -1,7 +1,12 @@
 import createMDX from '@next/mdx'
 import remarkGfm from 'remark-gfm'
 
-const withMDX = createMDX({ options: { remarkPlugins: [remarkGfm] } })
+const withMDX = createMDX({
+  options: {
+    remarkPlugins: [remarkGfm],
+    providerImportSource: '@mdx-js/react',
+  },
+})
 
 export default withMDX({
   output: 'standalone',

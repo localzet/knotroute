@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">KnotRoute</string>
+    <string name="channel_name">Сеть KnotRoute</string>
+    <string name="notification_running">Зашифрованная overlay-сеть подключена</string>
+    <string name="home">Главная</string><string name="browser">Браузер</string><string name="network">Сеть</string><string name="diagnostics">Диагностика</string>
+    <string name="connected">Подключено</string><string name="starting">Запуск…</string><string name="failed">Ошибка</string><string name="offline">Не подключено</string>
+    <string name="open_site">Открыть .knot сайт</string><string name="install_ca">Установить локальный CA</string><string name="network_settings">Настройки сети</string>
+    <string name="current_network">Текущая сеть</string><string name="node_address">Адрес узла</string><string name="proxy">Локальный HTTP proxy</string>
+    <string name="go">Открыть</string><string name="address_hint">https://… .knot</string><string name="tls_error">Ошибка доверия TLS. Установите локальный KnotRoute CA.</string>
+    <string name="core_starting">KnotRoute ещё запускается</string><string name="ca_failed">Не удалось установить CA</string>
+    <string name="profile">Профиль</string><string name="profile_name">Название профиля</string><string name="network_id">Network ID</string><string name="beacon_urls">Beacon URL, по одному на строку</string><string name="circuit_hops">Число hops в circuit</string>
+    <string name="save_restart">Сохранить и перезапустить</string><string name="add_profile">Добавить профиль</string><string name="delete_profile">Удалить профиль</string><string name="default_profile">Основная</string><string name="imported_profile">Импортированная сеть</string>
+    <string name="profile_imported">Профиль сети импортирован</string><string name="invalid_profile">Некорректный профиль подключения KnotRoute</string><string name="copy">Копировать</string><string name="copied">Скопировано</string>
+    <string name="last_error">Последняя ошибка</string><string name="webview_proxy_unsupported">Этот WebView не поддерживает локальное переопределение proxy</string>
+    <string name="no_error">Ошибок нет</string><string name="about_network">Профиль сети содержит только параметры подключения. Приватные ключи никогда не передаются через QR.</string>
+</resources>

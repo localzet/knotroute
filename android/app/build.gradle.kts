@@ -10,8 +10,8 @@ android {
         applicationId = "com.localzet.knotroute"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30000
-        versionName = providers.gradleProperty("knotVersion").orElse("3.0.0").get()
+        versionCode = 30100
+        versionName = providers.gradleProperty("knotVersion").orElse("3.1.0").get()
     }
 
     buildTypes {
@@ -25,7 +25,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
-
 
 dependencies {
     implementation(files("libs/knotroute-client.aar"))

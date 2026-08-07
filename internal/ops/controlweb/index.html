@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#111318" />
+  <title>KnotRoute Control</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <div id="login" class="login-shell hidden">
+    <form id="loginForm" class="login-card">
+      <div class="brand-mark">K</div>
+      <h1>KnotRoute Control</h1>
+      <p data-i18n="loginHint">Панель управления инфраструктурой KnotRoute.</p>
+      <label><span data-i18n="password">Пароль</span><input id="loginPassword" type="password" autocomplete="current-password" required /></label>
+      <button class="primary" type="submit" data-i18n="login">Войти</button>
+      <div id="loginError" class="error"></div>
+    </form>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark small">K</div><div><strong>KnotRoute</strong><span>Control</span></div></div>
+      <nav id="nav">
+        <button data-page="overview" class="active">◫ <span data-i18n="overview">Обзор</span></button>
+        <button data-page="networks">⌘ <span data-i18n="networks">Сети</span></button>
+        <button data-page="infrastructure">⬡ <span data-i18n="infrastructure">Инфраструктура</span></button>
+        <button data-page="services">◇ <span data-i18n="services">Сервисы</span></button>
+        <button data-page="onboarding">↗ <span data-i18n="onboarding">Подключение</span></button>
+        <button data-page="jobs">≡ <span data-i18n="jobs">Задачи</span></button>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="langBtn" class="ghost">RU / EN</button>
+        <button id="logoutBtn" class="ghost" data-i18n="logout">Выйти</button>
+      </div>
+    </aside>
+
+    <main>
+      <header><div><div class="eyebrow">KNOTROUTE CONTROL PLANE</div><h1 id="pageTitle">Обзор</h1></div><div class="header-actions"><span id="refreshState" class="muted"></span><button id="refreshBtn" class="ghost" data-i18n="refresh">Обновить</button></div></header>
+      <div id="notice"></div>
+
+      <section id="page-overview" class="page active">
+        <div class="metrics">
+          <article><span data-i18n="networks">Сети</span><strong id="metricNetworks">0</strong><small data-i18n="networkNamespaces">network namespaces</small></article>
+          <article><span data-i18n="agents">Агенты</span><strong id="metricAgents">0</strong><small id="metricAgentsOnline">0 online</small></article>
+          <article><span>Beacon / Relay</span><strong id="metricInfra">0</strong><small data-i18n="managedComponents">управляемые компоненты</small></article>
+          <article><span data-i18n="services">Сервисы</span><strong id="metricServices">0</strong><small data-i18n="publishedServices">опубликованные sidecar-сервисы</small></article>
+        </div>
+        <div class="grid two">
+          <article class="panel"><div class="panel-title"><div><span class="eyebrow">FLEET</span><h2 data-i18n="agentHealth">Состояние агентов</h2></div></div><div id="overviewAgents" class="list"></div></article>
+          <article class="panel"><div class="panel-title"><div><span class="eyebrow">ACTIVITY</span><h2 data-i18n="recentJobs">Последние задачи</h2></div></div><div id="overviewJobs" class="list"></div></article>
+        </div>
+      </section>
+
+      <section id="page-networks" class="page">
+        <div class="toolbar"><div><p data-i18n="networksHint">Профили независимых KnotRoute overlay-сетей.</p></div><button id="newNetworkBtn" class="primary" data-i18n="newNetwork">Новая сеть</button></div>
+        <div id="networksList" class="cards"></div>
+      </section>
+
+      <section id="page-infrastructure" class="page">
+        <div class="toolbar"><p data-i18n="infraHint">Beacon, relay и серверные агенты. Control не участвует в маршрутизации.</p><div><button id="deployBeaconBtn" class="primary">+ Beacon</button></div></div>
+        <div id="agentsList" class="cards"></div>
+      </section>
+
+      <section id="page-services" class="page">
+        <div class="toolbar"><p data-i18n="servicesHint">Управляемые KnotRoute sidecar-контейнеры и их цели.</p><button id="deploySidecarBtn" class="primary" data-i18n="publishService">Опубликовать сервис</button></div>
+        <div id="servicesList" class="cards"></div>
+      </section>
+
+      <section id="page-onboarding" class="page">
+        <div class="grid two onboarding-grid">
+          <article class="panel form-panel">
+            <span class="eyebrow">ONBOARDING BUILDER</span><h2 data-i18n="connectInstruction">Инструкция подключения</h2>
+            <label><span data-i18n="network">Сеть</span><select id="onboardNetwork"></select></label>
+            <label><span data-i18n="platform">Платформа</span><select id="onboardPlatform"><option value="windows">Windows</option><option value="android">Android</option><option value="linux">Linux</option><option value="docker">Docker / server</option><option value="go">Go SDK</option></select></label>
+            <label><span data-i18n="publicName">Публичное название профиля</span><input id="onboardName" placeholder="Production" /></label>
+            <button id="generateOnboardingBtn" class="primary" data-i18n="generate">Сгенерировать</button>
+          </article>
+          <article class="panel result-panel">
+            <div class="result-head"><div><span class="eyebrow">READY TO SHARE</span><h2 id="onboardTitle">—</h2></div><button id="copyOnboardingBtn" class="ghost" data-i18n="copy">Копировать</button></div>
+            <div id="qrBox" class="qr-box"><span>QR</span></div>
+            <pre id="onboardText">Выберите сеть и платформу.</pre>
+            <code id="onboardURI" class="uri"></code>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-jobs" class="page"><div id="jobsList" class="cards"></div></section>
+    </main>
+  </div>
+
+  <dialog id="modal"><form method="dialog" id="modalForm"><div class="modal-head"><div><span class="eyebrow" id="modalEyebrow">KNOTROUTE</span><h2 id="modalTitle"></h2></div><button class="icon" value="cancel">×</button></div><div id="modalBody"></div><div class="modal-actions"><button value="cancel" class="ghost" data-i18n="cancel">Отмена</button><button id="modalSubmit" value="default" class="primary" data-i18n="save">Сохранить</button></div></form></dialog>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

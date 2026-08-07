@@ -1,0 +1,65 @@
+services:
+  control:
+    image: ghcr.io/localzet/knotroute-control:3.1.0
+    restart: unless-stopped
+    environment:
+      KNOTROUTE_CONTROL_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_CONTROL_ADMIN_PASSWORD: "${KNOTROUTE_CONTROL_ADMIN_PASSWORD}"
+      KNOTROUTE_CONTROL_ENROLL_TOKEN: "${KNOTROUTE_CONTROL_ENROLL_TOKEN}"
+      KNOTROUTE_CONTROL_PUBLIC_URL: "https://control.example.net"
+    volumes:
+      - control-data:/data
+    expose:
+      - "8080"
+    networks:
+      - proxy
+      - ops
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.knot-control.rule=Host(`control.example.net`)"
+      - "traefik.http.routers.knot-control.entrypoints=websecure"
+      - "traefik.http.routers.knot-control.tls=true"
+      - "traefik.http.services.knot-control.loadbalancer.server.port=8080"
+
+  docs:
+    image: ghcr.io/localzet/knotroute-docs:3.1.0
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.knot-docs.rule=Host(`docs.example.net`)"
+      - "traefik.http.routers.knot-docs.entrypoints=websecure"
+      - "traefik.http.routers.knot-docs.tls=true"
+      - "traefik.http.services.knot-docs.loadbalancer.server.port=8080"
+
+  # Optional local agent. Remote servers run the same image and point to the
+  # public HTTPS Control URL instead of http://control:8080.
+  agent:
+    image: ghcr.io/localzet/knotroute-agent:3.1.0
+    restart: unless-stopped
+    depends_on:
+      - control
+    environment:
+      KNOTROUTE_CONTROL_URL: "http://control:8080"
+      KNOTROUTE_CONTROL_ENROLL_TOKEN: "${KNOTROUTE_CONTROL_ENROLL_TOKEN}"
+      KNOTROUTE_AGENT_NAME: "docker-host-01"
+      KNOTROUTE_AGENT_DOCKER: "true"
+      KNOTROUTE_AGENT_TAGS: "production,local"
+    volumes:
+      - agent-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ops
+
+networks:
+  proxy:
+    external: true
+  ops:
+    internal: true
+
+volumes:
+  control-data:
+  agent-data:

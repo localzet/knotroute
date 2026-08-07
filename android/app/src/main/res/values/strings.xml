@@ -1,4 +1,16 @@
 <resources>
     <string name="app_name">KnotRoute</string>
     <string name="channel_name">KnotRoute network</string>
+    <string name="notification_running">Encrypted overlay is connected</string>
+    <string name="home">Home</string><string name="browser">Browser</string><string name="network">Network</string><string name="diagnostics">Diagnostics</string>
+    <string name="connected">Connected</string><string name="starting">Starting…</string><string name="failed">Failed</string><string name="offline">Offline</string>
+    <string name="open_site">Open .knot site</string><string name="install_ca">Install local CA</string><string name="network_settings">Network settings</string>
+    <string name="current_network">Current network</string><string name="node_address">Node address</string><string name="proxy">Local HTTP proxy</string>
+    <string name="go">Go</string><string name="address_hint">https://… .knot</string><string name="tls_error">TLS trust failed. Install the KnotRoute local CA.</string>
+    <string name="core_starting">KnotRoute is still starting</string><string name="ca_failed">CA installation failed</string>
+    <string name="profile">Profile</string><string name="profile_name">Profile name</string><string name="network_id">Network ID</string><string name="beacon_urls">Beacon URLs, one per line</string><string name="circuit_hops">Circuit hops</string>
+    <string name="save_restart">Save &amp; restart</string><string name="add_profile">Add profile</string><string name="delete_profile">Delete profile</string><string name="default_profile">Default</string><string name="imported_profile">Imported network</string>
+    <string name="profile_imported">Network profile imported</string><string name="invalid_profile">Invalid KnotRoute join profile</string><string name="copy">Copy</string><string name="copied">Copied</string>
+    <string name="last_error">Last error</string><string name="webview_proxy_unsupported">This WebView does not support process proxy override</string>
+    <string name="no_error">No errors</string><string name="about_network">The network profile contains connection metadata only. Private keys never come from a QR code.</string>
 </resources>

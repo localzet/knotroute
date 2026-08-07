@@ -1,0 +1,12 @@
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knotroute-agent ./cmd/knotroute-agent
+
+# Docker management is opt-in at runtime. The agent is intentionally the only
+# ops component that may receive /var/run/docker.sock.
+FROM docker:29.6.2-cli
+RUN mkdir -p /data
+COPY --from=build /out/knotroute-agent /usr/local/bin/knotroute-agent
+VOLUME ["/data"]
+ENTRYPOINT ["/usr/local/bin/knotroute-agent"]

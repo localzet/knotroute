@@ -26,3 +26,7 @@ Android requires user interaction to add a user CA. TLS errors are treated as fa
 ## Troubleshooting
 
 Check Network ID, Beacon reachability, Internet connectivity, foreground service status, system time and application diagnostics.
+
+## Runtime lifecycle
+
+The foreground service owns the embedded core. After profile changes it performs an ordered stop/start and the Activity reapplies WebView proxy override only after the new core generation is ready. The UI also applies system-bar/display-cutout insets for API 36 edge-to-edge layouts. Circuit hops remain under Advanced settings; ordinary onboarding only needs profile name, Network ID and Beacon HTTP(S) URLs.

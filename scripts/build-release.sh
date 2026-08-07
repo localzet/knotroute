@@ -2,7 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION="${VERSION:-3.0.0}"
+VERSION="${VERSION:-dev}"
 OUT="${OUT:-dist}"
 case "$OUT" in
   /*) OUT_DIR="$OUT" ;;
@@ -12,6 +12,7 @@ esac
 mkdir -p "$OUT_DIR"
 cd "$ROOT"
 LDFLAGS="-s -w -X github.com/localzet/knotroute/internal/overlay.Version=$VERSION"
+OPS_LDFLAGS="-s -w -X github.com/localzet/knotroute/internal/ops.Version=$VERSION"
 
 for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 darwin/arm64; do
   GOOS=${target%/*}
@@ -26,6 +27,8 @@ for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 d
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/knotroute$EXT" ./cmd/knotroute
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/knotroute-beacon$EXT" ./cmd/knotroute-beacon
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/knotroute-sidecar$EXT" ./cmd/knotroute-sidecar
+  CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$OPS_LDFLAGS" -o "$TMP/knotroute-control$EXT" ./cmd/knotroute-control
+  CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$OPS_LDFLAGS" -o "$TMP/knotroute-agent$EXT" ./cmd/knotroute-agent
 
   if [ "$GOOS" = windows ]; then
     CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" -o "$TMP/knotroute-desktop.exe" ./cmd/knotroute-desktop

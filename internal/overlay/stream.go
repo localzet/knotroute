@@ -153,7 +153,18 @@ func (n *Node) OpenStream(ctx context.Context, destination nodeid.ID, service st
 
 func (n *Node) openWithConn(ctx context.Context, destination nodeid.ID, serviceName string, conn net.Conn) error {
 	if destination == n.id.ID {
-		return errors.New("opening a local service through the overlay is not supported; connect to its target directly")
+		local, err := n.openLocalNamedService(ctx, serviceName)
+		if err != nil {
+			return err
+		}
+		n.wg.Add(1)
+		go func() {
+			defer n.wg.Done()
+			defer local.Close()
+			defer conn.Close()
+			proxyBoth(conn, local)
+		}()
+		return nil
 	}
 	if _, ok := n.RouteTo(destination); !ok {
 		return fmt.Errorf("no route to %s", destination)
@@ -316,9 +327,8 @@ func (n *Node) handleOpen(packet protocol.Packet) {
 			n.sendOpenError(packet, "source is not allowed to access this service")
 			return
 		}
-		dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 20 * time.Second}
 		var err error
-		conn, err = dialer.DialContext(n.ctx, "tcp", service.Target)
+		conn, err = n.dialServiceTarget(n.ctx, service.Target)
 		if err != nil {
 			n.sendOpenError(packet, "service target unavailable: "+err.Error())
 			return

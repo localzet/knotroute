@@ -51,6 +51,7 @@ func (n *Node) startDashboard() error {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		next.Normalize()
 		if err := next.Validate(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

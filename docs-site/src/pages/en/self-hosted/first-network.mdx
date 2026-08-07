@@ -35,3 +35,9 @@ Provide Windows instructions/invites, Android QR/deep links, Linux proxy configu
 ## 8. Add synthetic monitoring
 
 Run a client from another failure domain and periodically open a known test service through the full overlay path.
+
+## Existing manually deployed Beacon
+
+Control does not need to own your Beacon. Save its HTTP(S) API URL in the network profile, for example `https://beacon.example.net`. Never use `:7447` as a Beacon URL: port 7447 is the raw KnotRoute relay transport, while the Beacon HTTP API normally sits behind HTTPS and maps to container port 8080.
+
+Before onboarding clients, verify `/healthz`, external TCP/7447 reachability, matching Network IDs, then publish a small test sidecar and perform an end-to-end request from a second KnotRoute node. A single host is acceptable for bootstrap testing but remains a single failure domain.

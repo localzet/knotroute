@@ -34,3 +34,9 @@ If Control is down, existing relays, sidecars, circuits and published services c
 ## Backup
 
 Preserve Control `/data` to retain network profiles, Agent registrations and operational state.
+
+## External versus managed Beacons
+
+An external Beacon is only registered in a network profile and requires no Agent. A managed Beacon is created through a `deploy_beacon` job on a Docker-enabled Agent. Do not deploy a duplicate managed Beacon just because an existing Beacon was created outside Control.
+
+Managed sidecars regenerate runtime config from deployment environment on restart while retaining service identity in persistent `/data`. Control itself must never receive the Docker socket.

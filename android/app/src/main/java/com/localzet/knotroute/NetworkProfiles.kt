@@ -76,7 +76,15 @@ object NetworkProfiles {
         val networkId = uri.getQueryParameter("network_id")?.trim().orEmpty()
         if (!networkId.startsWith("kn_")) return null
         val name = uri.getQueryParameter("name")?.trim().takeUnless { it.isNullOrBlank() } ?: context.getString(R.string.imported_profile)
-        val beacons = uri.getQueryParameters("beacon").map { it.trim() }.filter { it.startsWith("https://") }
+        val beacons = uri.getQueryParameters("beacon").map { it.trim() }.filter {
+            runCatching {
+                val parsed = android.net.Uri.parse(it)
+                (parsed.scheme == "https" || parsed.scheme == "http") &&
+                    !parsed.host.isNullOrBlank() && parsed.port != 7447 &&
+                    (parsed.path.isNullOrBlank() || parsed.path == "/") &&
+                    parsed.query.isNullOrBlank() && parsed.fragment.isNullOrBlank() && parsed.userInfo.isNullOrBlank()
+            }.getOrDefault(false)
+        }
         return NetworkProfile(name, networkId, beacons, 3)
     }
 }

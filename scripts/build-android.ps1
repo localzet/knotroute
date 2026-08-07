@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$Version = if ($env:VERSION) { $env:VERSION } else { "3.0.0" }
+$Version = if ($env:VERSION) { $env:VERSION } else { "dev" }
 if (-not $env:ANDROID_HOME) { throw "ANDROID_HOME must point to the Android SDK" }
 $Gradle = if (Test-Path "$Root/android/gradlew.bat") { "$Root/android/gradlew.bat" } elseif (Get-Command gradle -ErrorAction SilentlyContinue) { (Get-Command gradle).Source } else { throw "Gradle 9.5+ is required (Android Studio can provide it)" }
 New-Item -ItemType Directory -Force "$Root/android/app/libs", "$Root/dist" | Out-Null

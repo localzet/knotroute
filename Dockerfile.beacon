@@ -1,8 +1,9 @@
 FROM golang:1.25-alpine AS build
 WORKDIR /src
+ARG VERSION=dev
 COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knotroute-beacon ./cmd/knotroute-beacon
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X github.com/localzet/knotroute/internal/overlay.Version=${VERSION}" -o /out/knotroute-beacon ./cmd/knotroute-beacon
 
 FROM scratch
 COPY --from=build /out/knotroute-beacon /knotroute-beacon

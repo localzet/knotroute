@@ -24,6 +24,7 @@ export const navigation = {
       { title: 'Service identity и миграция', href: '/ru/self-hosted/service-identity', description: 'Стабильный адрес, перенос между серверами и резервные копии.' },
       { title: 'Мониторинг', href: '/ru/self-hosted/monitoring', description: 'Health checks, synthetic probes и признаки деградации.' },
       { title: 'Бэкапы и обновления', href: '/ru/self-hosted/backup-updates', description: 'Что сохранять и как обновлять без смены .knot.' },
+      { title: 'Диагностический runbook', href: '/ru/self-hosted/diagnostics', description: 'Пошаговая проверка Control → Beacon → relay → client → sidecar → rendezvous.' },
       { title: 'Troubleshooting серверов', href: '/ru/self-hosted/troubleshooting', description: 'Beacon, sidecar, Agent, relay и Docker проблемы.' },
     ]},
     { title: 'Разработка', links: [
@@ -66,6 +67,7 @@ export const navigation = {
       { title: 'Service identity and migration', href: '/en/self-hosted/service-identity', description: 'Stable addresses, migrations and backups.' },
       { title: 'Monitoring', href: '/en/self-hosted/monitoring', description: 'Health checks, synthetic probes and degradation signals.' },
       { title: 'Backups and upgrades', href: '/en/self-hosted/backup-updates', description: 'What to preserve and how to upgrade without changing .knot.' },
+      { title: 'Diagnostic runbook', href: '/en/self-hosted/diagnostics', description: 'Layer-by-layer Control, Beacon, relay, client, sidecar and rendezvous checks.' },
       { title: 'Server troubleshooting', href: '/en/self-hosted/troubleshooting', description: 'Beacon, sidecar, Agent, relay and Docker failures.' },
     ]},
     { title: 'Development', links: [

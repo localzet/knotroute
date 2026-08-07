@@ -91,3 +91,87 @@ Docker socket монтируйте только тем Agents, которым д
 - как отзывается скомпрометированный host;
 - какой release channel используется;
 - кто получает alerts synthetic monitor.
+
+## Вариант для первого сервера: всё основное на одном host
+
+Для первого запуска не обязательно сразу иметь пять машин. Допустимо начать с одного публичного сервера и вынести отказоустойчивость позже. На нём могут одновременно работать:
+
+```text
+Traefik/Caddy
+├─ control.example.net -> knotroute-control:8080
+├─ docs.example.net    -> knotroute-docs:8080
+└─ beacon.example.net  -> knotroute-beacon:8080
+
+Internet TCP/7447 -> knotroute-beacon:7447
+```
+
+Здесь `8080` Beacon — HTTP discovery API, а `7447` — сырой KnotRoute relay transport. Это разные протоколы. В клиентский список Beacon всегда записывается HTTP(S) URL, например `https://beacon.example.net`, **не** `http://beacon.example.net:7447`.
+
+<Callout type="warning">Один сервер подходит для bootstrap и проверки, но остаётся единой точкой отказа. После успешного end-to-end теста вынесите второй Beacon/relay на другой host.</Callout>
+
+## Если Beacon уже поднят вручную
+
+Control не обязан разворачивать Beacon сам. Откройте **Сети → Добавить сеть** и укажите:
+
+```text
+Название: Production
+Network ID: kn_...
+Beacon: https://beacon.example.net
+```
+
+После сохранения нажмите **Проверить Beacon**. Control делает запрос к `/healthz`; успешная проверка означает только доступность HTTP API. Отдельно проверьте доступность relay-порта `7447/tcp` извне.
+
+Не создавайте второй Beacon только потому, что Control показывает кнопку «Развернуть новый Beacon». Эта операция нужна, когда вы действительно хотите, чтобы Agent создал новый managed-container.
+
+## Что проверить до подключения первого клиента
+
+Проверка по слоям помогает быстро понять, где именно проблема:
+
+```bash
+# 1. HTTP discovery API
+curl -fsS https://beacon.example.net/healthz
+
+# 2. DNS
+getent hosts beacon.example.net
+
+# 3. Relay TCP с другой машины
+nc -vz beacon.example.net 7447
+```
+
+На сервере также проверьте container logs и persistent volume Beacon. Если HTTP работает, а `7447` закрыт firewall'ом, клиент сможет обратиться к discovery API, но не сможет использовать этот endpoint как relay.
+
+## Настройка первого Windows-клиента
+
+На клиенте должны совпадать только параметры сети и bootstrap:
+
+```text
+Network ID: тот же kn_...
+Beacon URL: https://beacon.example.net
+```
+
+После сохранения конфигурации дождитесь появления хотя бы одного peer. Затем включите `.knot` integration, если нужен браузерный доступ. Не начинайте диагностику CA/HTTPS, пока в Dashboard нет peer connectivity: это более поздний слой.
+
+## Первый end-to-end сервис
+
+Для проверки сети удобно опубликовать маленький HTTP service через sidecar. У sidecar должны быть:
+
+- тот же `network_id`;
+- хотя бы один рабочий Beacon URL или иной реально настроенный discovery path;
+- Docker network, в которой разрешается имя target-контейнера;
+- persistent `/data` для service identity.
+
+После появления canonical `<service>.knot` проверьте его **с другого KnotRoute node**. Собственный node теперь поддерживает local fast-path и тоже может открыть свой опубликованный service, но удалённая проверка дополнительно подтверждает descriptor/introduction/rendezvous path.
+
+## Когда считать bootstrap завершённым
+
+Сеть ещё не становится production-ready от одного зелёного `/healthz`. Минимальный практический критерий:
+
+1. два клиента обнаруживают relay через Beacon;
+2. между nodes есть routes;
+3. опубликованный service разрешается по canonical `.knot`;
+4. HTTP request проходит через overlay;
+5. после перезапуска Beacon/sidecar identities сохраняются;
+6. после перезапуска клиента он снова подключается без ручного редактирования конфигурации;
+7. backup service identity проверен хотя бы чтением/восстановлением в тестовой среде.
+
+Для системной диагностики используйте [пошаговый runbook](/ru/self-hosted/diagnostics).

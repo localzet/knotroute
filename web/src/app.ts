@@ -22,7 +22,7 @@ type Config = {
   routing: { lsa_interval: string; lsa_ttl: string; max_hops: number };
 };
 type Status = any;
-type Field = { key: string; label: string; value?: string; checked?: boolean; type?: "text"|"checkbox"|"number"; placeholder?: string; cls?: string };
+type Field = { key: string; label: string; value?: string; checked?: boolean; type?: "text"|"checkbox"|"number"; placeholder?: string; cls?: string; advanced?: boolean };
 
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const node = document.getElementById(id);
@@ -35,7 +35,7 @@ let dirty = false;
 
 const short = (id: string | null | undefined) => id && id.length > 18 ? `${id.slice(0, 10)}…${id.slice(-4)}` : id ?? "—";
 const bytes = (n: number) => { if (!n) return "0 B"; const u = ["B", "KiB", "MiB", "GiB", "TiB"]; const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1); return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`; };
-const duration = (seconds: number) => { const n = Math.max(0, Math.floor(seconds)), d = Math.floor(n / 86400), h = Math.floor(n % 86400 / 3600), m = Math.floor(n % 3600 / 60), s = n % 60; return [[d, "d"], [h, "h"], [m, "m"], [s, "s"]].filter(([v]) => Number(v) > 0 || s === Number(v)).map(([v, u]) => `${v}${u}`).join(" "); };
+const duration = (seconds: number) => { const n = Math.max(0, Math.floor(seconds)), d = Math.floor(n / 86400), h = Math.floor(n % 86400 / 3600), m = Math.floor(n % 3600 / 60), s = n % 60; return [[d, "д"], [h, "ч"], [m, "м"], [s, "с"]].filter(([v]) => Number(v) > 0 || s === Number(v)).map(([v, u]) => `${v}${u}`).join(" "); };
 const esc = (value: unknown) => String(value ?? "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c] ?? c));
 const lines = (value: string) => value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 const csv = (value: string) => value.split(",").map(x => x.trim()).filter(Boolean);
@@ -45,30 +45,30 @@ function setSaveState(message: string, state = "") {
   if (bar) bar.className = `savebar panel ${state}`;
   byId("saveState").textContent = message;
 }
-function markDirty() { dirty = true; setSaveState("Unsaved changes"); }
+function markDirty() { dirty = true; setSaveState("Есть несохранённые изменения"); }
 
 function renderRoutes(items: any[]) {
   const root = byId("routes");
-  if (!items.length) { root.className = "table-wrap empty"; root.textContent = "No routes yet"; return; }
+  if (!items.length) { root.className = "table-wrap empty"; root.textContent = "Маршрутов пока нет"; return; }
   root.className = "table-wrap";
-  root.innerHTML = `<table><thead><tr><th>Destination</th><th>Path</th><th>Hops</th><th>Services</th></tr></thead><tbody>${items.map(r => `<tr><td><code title="${esc(r.destination)}">${esc(r.domain)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length ? r.services.map((x: string) => `<span class="service-pill">${esc(x)}</span>`).join("") : "—"}</td></tr>`).join("")}</tbody></table>`;
+  root.innerHTML = `<table><thead><tr><th>Назначение</th><th>Путь</th><th>Хопы</th><th>Сервисы</th></tr></thead><tbody>${items.map(r => `<tr><td><code title="${esc(r.destination)}">${esc(r.domain)}</code></td><td class="path">${r.path.map(short).map(esc).join(" → ")}</td><td>${r.hops}</td><td>${r.services.length ? r.services.map((x: string) => `<span class="service-pill">${esc(x)}</span>`).join("") : "—"}</td></tr>`).join("")}</tbody></table>`;
 }
 function renderPeers(items: any[]) {
   const root = byId("peers");
-  if (!items.length) { root.className = "cards empty"; root.textContent = "No peers connected"; return; }
+  if (!items.length) { root.className = "cards empty"; root.textContent = "Нет подключённых пиров"; return; }
   root.className = "cards";
-  root.innerHTML = items.map(p => `<div class="card"><div class="card-top"><strong title="${esc(p.id)}">${esc(p.short_id)}</strong><span class="direction">${esc(p.direction)}</span></div><p>${esc(p.remote_addr)}${p.advertise?.length ? ` · ${esc(p.advertise.join(", "))}` : ""}</p></div>`).join("");
+  root.innerHTML = items.map(p => `<div class="card"><div class="card-top"><strong title="${esc(p.id)}">${esc(p.short_id)}</strong><span class="direction">${esc(p.direction === "inbound" ? "входящий" : p.direction === "outbound" ? "исходящий" : p.direction)}</span></div><p>${esc(p.remote_addr)}${p.advertise?.length ? ` · ${esc(p.advertise.join(", "))}` : ""}</p></div>`).join("");
 }
 function renderEndpoints(services: any[], forwards: any[]) {
   const root = byId("endpoints");
-  const all = [...services.map(x => ({ title: x.domain || x.name, sub: `${x.name} → ${x.target}${x.description ? ` · ${x.description}` : ""}${x.introduction_points?.length ? ` · ${x.introduction_points.length} intros` : ""}`, tag: x.published ? "hidden service" : "direct service", ok: true })), ...forwards.map(x => ({ title: x.listen, sub: `${short(x.node)} / ${x.service}${x.error ? ` · ${x.error}` : ""}`, tag: "forward", ok: x.active }))];
-  if (!all.length) { root.className = "cards empty"; root.textContent = "Nothing configured"; return; }
+  const all = [...services.map(x => ({ title: x.domain || x.name, sub: `${x.name} → ${x.target}${x.description ? ` · ${x.description}` : ""}${x.introduction_points?.length ? ` · introduction points: ${x.introduction_points.length}` : ""}`, tag: x.published ? "скрытый сервис" : "прямой сервис", ok: true })), ...forwards.map(x => ({ title: x.listen, sub: `${short(x.node)} / ${x.service}${x.error ? ` · ${x.error}` : ""}`, tag: "проброс", ok: x.active }))];
+  if (!all.length) { root.className = "cards empty"; root.textContent = "Ничего не настроено"; return; }
   root.className = "cards";
   root.innerHTML = all.map(x => `<div class="card"><div class="card-top"><strong>${esc(x.title)}</strong><span class="state ${x.ok ? "ok" : "bad"}">${esc(x.tag)}</span></div><p>${esc(x.sub)}</p></div>`).join("");
 }
 function renderEvents(items: any[]) {
   const root = byId("events"), show = items.slice(-80).reverse();
-  if (!show.length) { root.className = "events empty"; root.textContent = "No events"; return; }
+  if (!show.length) { root.className = "events empty"; root.textContent = "Событий пока нет"; return; }
   root.className = "events";
   root.innerHTML = show.map(e => `<div class="event"><time>${new Date(e.time).toLocaleTimeString()}</time><span class="level ${esc(e.level)}">${esc(e.level)}</span><span>${esc(e.message)}</span></div>`).join("");
 }
@@ -77,24 +77,24 @@ function renderStatus(s: Status) {
   byId("domain").textContent = s.domain;
   byId("nodeId").textContent = s.node_id;
   byId("networkId").textContent = s.network_id ?? "—";
-  byId("listen").textContent = s.listen.length ? `Listening on ${s.listen.join(", ")}` : "No overlay listener";
+  byId("listen").textContent = s.listen.length ? `Слушает: ${s.listen.join(", ")}` : "Overlay listener отключён";
   byId("peerCount").textContent = String(s.peers.length);
   byId("routeCount").textContent = String(s.routes.length);
   byId("streamCount").textContent = `${s.active_streams} / ${s.active_circuits ?? 0}`;
   byId("traffic").textContent = bytes(s.bytes_sent + s.bytes_received);
-  byId("frames").textContent = `${s.frames_sent + s.frames_received} frames · ↑ ${bytes(s.bytes_sent)} ↓ ${bytes(s.bytes_received)}`;
+  byId("frames").textContent = `${s.frames_sent + s.frames_received} кадров · ↑ ${bytes(s.bytes_sent)} ↓ ${bytes(s.bytes_received)}`;
   byId("uptime").textContent = duration((Date.now() - new Date(s.started_at).getTime()) / 1000);
   byId("version").textContent = `KnotRoute ${s.version}`;
   byId("serviceCount").textContent = String(s.services.filter((x: any) => x.published).length);
-  byId("descriptorCount").textContent = `service identities · ${s.descriptors ?? 0} descriptors`;
+  byId("descriptorCount").textContent = `идентичности сервисов · дескрипторов: ${s.descriptors ?? 0}`;
   byId("gatewayCount").textContent = String(s.proxy.listeners.length);
-  byId("topologyBadge").textContent = `${s.routes.length} nodes`;
-  byId("socksAddress").textContent = s.proxy.socks ? `socks5://${s.proxy.socks}` : "disabled";
-  byId("httpAddress").textContent = s.proxy.http ? `http://${s.proxy.http}` : "disabled";
-  byId("pacAddress").textContent = s.proxy.pac || "disabled";
+  byId("topologyBadge").textContent = `${s.routes.length} узлов`;
+  byId("socksAddress").textContent = s.proxy.socks ? `socks5://${s.proxy.socks}` : "выключено";
+  byId("httpAddress").textContent = s.proxy.http ? `http://${s.proxy.http}` : "выключено";
+  byId("pacAddress").textContent = s.proxy.pac || "выключено";
   renderRoutes(s.routes); renderPeers(s.peers); renderEndpoints(s.services, s.forwards); renderEvents(s.events);
   const health = document.querySelector<HTMLElement>(".health"); if (health) health.className = "health online";
-  byId("healthText").textContent = "Online";
+  byId("healthText").textContent = "Подключён";
 }
 async function refresh() {
   try {
@@ -103,19 +103,28 @@ async function refresh() {
     renderStatus(await response.json());
   } catch {
     const health = document.querySelector<HTMLElement>(".health"); if (health) health.className = "health offline";
-    byId("healthText").textContent = "Disconnected";
+    byId("healthText").textContent = "Нет связи";
   }
 }
 
 function makeRow(root: HTMLElement, fields: Field[]) {
   const row = document.createElement("div"); row.className = "editor-row";
-  for (const field of fields) {
+  const advanced = fields.filter(field => field.advanced);
+  const renderField = (field: Field, parent: HTMLElement) => {
     const label = document.createElement("label"); if (field.cls) label.className = field.cls;
     const span = document.createElement("span"); span.textContent = field.label;
     const input = document.createElement("input"); input.dataset.key = field.key; input.type = field.type ?? "text"; if (input.type === "checkbox") input.checked = field.checked ?? false; else input.value = field.value ?? ""; input.placeholder = field.placeholder ?? "";
-    input.addEventListener("input", markDirty); label.append(span, input); row.append(label);
+    input.addEventListener("input", markDirty); input.addEventListener("change", markDirty); label.append(span, input); parent.append(label);
+  };
+  for (const field of fields.filter(field => !field.advanced)) renderField(field, row);
+  if (advanced.length) {
+    const details = document.createElement("details"); details.className = "row-advanced";
+    const summary = document.createElement("summary"); summary.textContent = "Дополнительно"; details.append(summary);
+    const body = document.createElement("div"); body.className = "row-advanced-body";
+    for (const field of advanced) renderField(field, body);
+    details.append(body); row.append(details);
   }
-  const remove = document.createElement("button"); remove.className = "remove"; remove.type = "button"; remove.textContent = "×"; remove.title = "Remove";
+  const remove = document.createElement("button"); remove.className = "remove"; remove.type = "button"; remove.textContent = "×"; remove.title = "Удалить";
   remove.addEventListener("click", () => { row.remove(); markDirty(); }); row.append(remove); root.append(row);
 }
 function value(row: Element, key: string) { return (row.querySelector<HTMLInputElement>(`[data-key="${key}"]`)?.value ?? "").trim(); }
@@ -124,13 +133,13 @@ function rows(id: string) { return [...byId(id).querySelectorAll(".editor-row")]
 function renderConfig(cfg: Config) {
   currentConfig = cfg;
   const peerRoot = byId("peerEditor"); peerRoot.replaceChildren();
-  for (const p of cfg.peers ?? []) makeRow(peerRoot, [{ key: "address", label: "Address", value: p.address, placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Expected node ID", value: p.expected_id, placeholder: "kr_…", cls: "wide" }]);
+  for (const p of cfg.peers ?? []) makeRow(peerRoot, [{ key: "address", label: "Адрес", value: p.address, placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Ожидаемый ID узла", value: p.expected_id, placeholder: "kr_…", cls: "wide", advanced: true }]);
   const serviceRoot = byId("serviceEditor"); serviceRoot.replaceChildren();
-  for (const s of cfg.services ?? []) makeRow(serviceRoot, [{ key: "name", label: "Name", value: s.name, placeholder: "web", cls: "narrow" }, { key: "target", label: "Local target", value: s.target, placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Publish identity", type: "checkbox", checked: s.publish ?? false, cls: "narrow" }, { key: "intros", label: "Intro points", type: "number", value: String(s.intro_count ?? 3), cls: "narrow" }, { key: "description", label: "Description", value: s.description }, { key: "allow", label: "Direct-mode node ACL", value: (s.allow ?? []).join(","), placeholder: "*", cls: "wide" }]);
+  for (const s of cfg.services ?? []) makeRow(serviceRoot, [{ key: "name", label: "Имя", value: s.name, placeholder: "web", cls: "narrow" }, { key: "target", label: "Локальная цель", value: s.target, placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Опубликовать identity", type: "checkbox", checked: s.publish ?? false, cls: "narrow" }, { key: "intros", label: "Точек входа", type: "number", value: String(s.intro_count ?? 3), cls: "narrow", advanced: true }, { key: "description", label: "Описание", value: s.description, advanced: true }, { key: "allow", label: "ACL узлов (прямой режим)", value: (s.allow ?? []).join(","), placeholder: "*", cls: "wide", advanced: true }]);
   const forwardRoot = byId("forwardEditor"); forwardRoot.replaceChildren();
-  for (const f of cfg.forwards ?? []) makeRow(forwardRoot, [{ key: "listen", label: "Local listener", value: f.listen, placeholder: "127.0.0.1:2222" }, { key: "node", label: "Remote node ID", value: f.node, placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Service", value: f.service, placeholder: "ssh", cls: "narrow" }]);
+  for (const f of cfg.forwards ?? []) makeRow(forwardRoot, [{ key: "listen", label: "Локальный listener", value: f.listen, placeholder: "127.0.0.1:2222" }, { key: "node", label: "ID удалённого узла", value: f.node, placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Сервис", value: f.service, placeholder: "ssh", cls: "narrow" }]);
   const aliasRoot = byId("aliasEditor"); aliasRoot.replaceChildren();
-  for (const a of cfg.aliases ?? []) makeRow(aliasRoot, [{ key: "name", label: "Alias", value: a.name, placeholder: "server", cls: "narrow" }, { key: "node", label: "Node target", value: a.node, placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Service target", value: a.service_id, placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Description", value: a.description }]);
+  for (const a of cfg.aliases ?? []) makeRow(aliasRoot, [{ key: "name", label: "Алиас", value: a.name, placeholder: "server", cls: "narrow" }, { key: "node", label: "Целевой узел", value: a.node, placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Целевой сервис", value: a.service_id, placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Описание", value: a.description, advanced: true }]);
   byId<HTMLTextAreaElement>("listenInput").value = cfg.listen.join("\n");
   byId<HTMLTextAreaElement>("advertiseInput").value = (cfg.advertise ?? []).join("\n");
   byId<HTMLInputElement>("networkIdInput").value = cfg.network_id;
@@ -157,7 +166,7 @@ function renderConfig(cfg: Config) {
   byId<HTMLInputElement>("maxHops").value = String(cfg.routing.max_hops);
   byId<HTMLInputElement>("lsaInterval").value = cfg.routing.lsa_interval;
   byId<HTMLInputElement>("lsaTtl").value = cfg.routing.lsa_ttl;
-  dirty = false; setSaveState("Configuration loaded", "success");
+  dirty = false; setSaveState("Конфигурация загружена", "success");
 }
 async function loadConfig() {
   const response = await fetch("/api/config", { cache: "no-store" });
@@ -165,7 +174,7 @@ async function loadConfig() {
   renderConfig(await response.json());
 }
 function collectConfig(): Config {
-  if (!currentConfig) throw new Error("configuration is not loaded");
+  if (!currentConfig) throw new Error("конфигурация ещё не загружена");
   return {
     ...currentConfig,
     listen: lines(byId<HTMLTextAreaElement>("listenInput").value),
@@ -185,12 +194,12 @@ function collectConfig(): Config {
   };
 }
 async function saveConfig() {
-  const button = byId<HTMLButtonElement>("saveConfig"); button.disabled = true; setSaveState("Validating and saving…");
+  const button = byId<HTMLButtonElement>("saveConfig"); button.disabled = true; setSaveState("Проверка и сохранение…");
   try {
     const next = collectConfig();
     const response = await fetch("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
     if (!response.ok) throw new Error((await response.text()).trim());
-    currentConfig = next; dirty = false; setSaveState("Saved. Restarting node…", "success");
+    currentConfig = next; dirty = false; setSaveState("Сохранено. Перезапускаю узел…", "success");
     await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     setTimeout(() => void loadConfig().catch(() => undefined), 2200);
   } catch (error) { setSaveState(error instanceof Error ? error.message : String(error), "error"); }
@@ -203,15 +212,15 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>(".tab")) tab.addE
 });
 for (const input of document.querySelectorAll("input,textarea")) input.addEventListener("input", markDirty);
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) button.addEventListener("click", async () => {
-  const target = byId(button.dataset.copy ?? ""); await navigator.clipboard.writeText(target.textContent ?? ""); const old = button.textContent; button.textContent = "Copied"; setTimeout(() => button.textContent = old, 1200);
+  const target = byId(button.dataset.copy ?? ""); await navigator.clipboard.writeText(target.textContent ?? ""); const old = button.textContent; button.textContent = "Скопировано"; setTimeout(() => button.textContent = old, 1200);
 });
-byId("addPeer").addEventListener("click", () => makeRow(byId("peerEditor"), [{ key: "address", label: "Address", placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Expected node ID", placeholder: "kr_…", cls: "wide" }]));
-byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Name", placeholder: "web", cls: "narrow" }, { key: "target", label: "Local target", placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Publish identity", type: "checkbox", checked: true, cls: "narrow" }, { key: "intros", label: "Intro points", type: "number", value: "3", cls: "narrow" }, { key: "description", label: "Description" }, { key: "allow", label: "Direct-mode node ACL", placeholder: "*", cls: "wide" }]));
-byId("addForward").addEventListener("click", () => makeRow(byId("forwardEditor"), [{ key: "listen", label: "Local listener", placeholder: "127.0.0.1:2222" }, { key: "node", label: "Remote node ID", placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Service", placeholder: "ssh", cls: "narrow" }]));
-byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Alias", placeholder: "server", cls: "narrow" }, { key: "node", label: "Node target", placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Service target", placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Description" }]));
+byId("addPeer").addEventListener("click", () => makeRow(byId("peerEditor"), [{ key: "address", label: "Адрес", placeholder: "seed.example:7447", cls: "wide" }, { key: "expected", label: "Ожидаемый ID узла", placeholder: "kr_…", cls: "wide", advanced: true }]));
+byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Имя", placeholder: "web", cls: "narrow" }, { key: "target", label: "Локальная цель", placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Опубликовать identity", type: "checkbox", checked: true, cls: "narrow" }, { key: "intros", label: "Точек входа", type: "number", value: "3", cls: "narrow", advanced: true }, { key: "description", label: "Описание", advanced: true }, { key: "allow", label: "ACL узлов (прямой режим)", placeholder: "*", cls: "wide", advanced: true }]));
+byId("addForward").addEventListener("click", () => makeRow(byId("forwardEditor"), [{ key: "listen", label: "Локальный listener", placeholder: "127.0.0.1:2222" }, { key: "node", label: "ID удалённого узла", placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Сервис", placeholder: "ssh", cls: "narrow" }]));
+byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Алиас", placeholder: "server", cls: "narrow" }, { key: "node", label: "Целевой узел", placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Целевой сервис", placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Описание", advanced: true }]));
 byId("saveConfig").addEventListener("click", () => void saveConfig());
-byId("restartNode").addEventListener("click", async () => { await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Restart requested", "success"); });
-byId("stopNode").addEventListener("click", async () => { if (!confirm("Stop the KnotRoute node? The tray controller can start it again.")) return; await fetch("/api/shutdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Node stopped", "success"); });
+byId("restartNode").addEventListener("click", async () => { await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Перезапуск запрошен", "success"); });
+byId("stopNode").addEventListener("click", async () => { if (!confirm("Остановить узел KnotRoute? Его можно снова запустить из приложения в трее.")) return; await fetch("/api/shutdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Узел остановлен", "success"); });
 window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
 
 void refresh(); void loadConfig().catch(error => setSaveState(error instanceof Error ? error.message : String(error), "error"));

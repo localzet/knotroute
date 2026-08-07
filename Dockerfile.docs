@@ -6,6 +6,8 @@ RUN npm install --legacy-peer-deps --no-audit --no-fund
 
 FROM node:24-alpine AS build
 WORKDIR /app
+ARG VERSION=dev
+ENV NEXT_PUBLIC_KNOTROUTE_VERSION=${VERSION}
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY docs-site/ ./

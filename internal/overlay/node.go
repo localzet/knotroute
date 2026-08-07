@@ -30,7 +30,7 @@ import (
 	"github.com/localzet/knotroute/internal/router"
 )
 
-var Version = "3.0.0"
+var Version = "dev"
 
 type counters struct {
 	bytesSent, bytesReceived, framesSent, framesReceived atomic.Uint64
@@ -203,7 +203,7 @@ func (n *Node) Start(parent context.Context) error {
 		gateway := &proxyserver.Gateway{
 			Aliases: n.cfg.Aliases, Direct: n.cfg.Proxy.Direct,
 			DefaultHTTP: n.cfg.Proxy.DefaultHTTP, DefaultHTTPS: n.cfg.Proxy.DefaultHTTPS,
-			DialOverlay:    n.OpenStream,
+			DialOverlay:    n.OpenCircuitStream,
 			DialService:    n.OpenService,
 			Authority:      n.ca,
 			InterceptHTTPS: n.cfg.CA.Enabled && n.cfg.CA.InterceptHTTPS,

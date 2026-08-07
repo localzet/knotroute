@@ -1,0 +1,309 @@
+# Диагностический runbook
+
+Эта страница — не список общих советов, а порядок проверки живой KnotRoute-сети. Идите сверху вниз: каждый слой должен быть исправен до перехода к следующему.
+
+<Callout type="info" title="Главный принцип">Разделяйте **Beacon HTTP API**, **relay transport**, **overlay routing**, **service descriptor** и **локальный target приложения**. Это разные соединения. Успешный `/healthz` Beacon не означает, что открыт `7447/tcp`, а работающий sidecar не означает, что `app:8080` доступен из его Docker network.</Callout>
+
+## 0. Соберите исходные данные
+
+Перед диагностикой выпишите:
+
+```text
+Network ID       kn_...
+Beacon HTTP URL  https://beacon.example.net
+Relay endpoint   relay.example.net:7447
+Client version   ...
+Beacon version   ...
+Sidecar version  ...
+Service .knot    ...
+```
+
+Не смешивайте два адреса Beacon:
+
+| Назначение | Пример | Протокол |
+| --- | --- | --- |
+| discovery API | `https://beacon.example.net` | HTTPS |
+| bundled relay | `relay.example.net:7447` | KnotRoute TCP |
+
+Нельзя указывать `http://beacon.example.net:7447` в `discovery.beacons`: порт 7447 не говорит HTTP.
+
+## 1. Проверка Control
+
+Control опционален для data plane. Если Control недоступен, уже запущенные Beacon, relay и sidecar должны продолжить работу.
+
+Проверка контейнера:
+
+```bash
+docker compose ps control
+docker compose logs --tail=200 control
+curl -fsS https://control.example.net/healthz
+```
+
+Ожидается JSON с `ok: true` и версией.
+
+### Control требует Beacon, который уже развёрнут вручную
+
+**Не разворачивайте второй Beacon.** Откройте `Сети → Изменить` и добавьте URL уже существующего HTTP API:
+
+```text
+https://beacon.example.net
+```
+
+Кнопка **Проверить Beacon** выполняет `/healthz` с Control-host. Это проверяет именно доступность discovery endpoint для Control, а не relay `7447`.
+
+Network profile может быть сохранён вообще без Beacon. Beacon нужен sidecar deployment только потому, что managed sidecar должен получить хотя бы один bootstrap discovery path. Если discovery организован иначе, sidecar можно разворачивать вручную с соответствующим config.
+
+### Непонятная ошибка из UI
+
+Сначала откройте DevTools → Network и найдите запрос `/api/v1/...`. Control возвращает JSON error с сообщением и, для известных validation failures, подсказкой.
+
+После обновления Control сделайте один hard refresh. Новые версии отдают `app.js` с `Cache-Control: no-cache`, поэтому браузер не должен держать старый frontend часами.
+
+## 2. Проверка Beacon HTTP
+
+С внешней машины:
+
+```bash
+curl -v https://beacon.example.net/healthz
+```
+
+Нормальный ответ:
+
+```json
+{"ok":true}
+```
+
+Если здесь проблема:
+
+- DNS должен вести на нужный host;
+- reverse proxy должен маршрутизировать HTTP(S) на container `:8080`;
+- TLS certificate должен быть валидным;
+- не проксируйте HTTP API на `:7447`.
+
+На сервере полезно проверить backend в обход reverse proxy:
+
+```bash
+curl -v http://127.0.0.1:18080/healthz
+```
+
+Конкретный host-port зависит от compose.
+
+## 3. Проверка relay 7447
+
+HTTP health Beacon и raw relay — разные endpoints.
+
+С внешней машины проверьте TCP reachability:
+
+```bash
+nc -vz relay.example.net 7447
+```
+
+или PowerShell:
+
+```powershell
+Test-NetConnection relay.example.net -Port 7447
+```
+
+Если HTTP health работает, а TCP нет:
+
+- откройте `7447/tcp` в host firewall/security group;
+- проверьте Docker `ports:`;
+- проверьте `KNOTROUTE_BEACON_RELAY_ADVERTISE`;
+- убедитесь, что hostname advertise доступен клиентам извне.
+
+<Callout type="warning">Не проверяйте relay командой `curl http://host:7447`. Это не HTTP endpoint.</Callout>
+
+## 4. Проверка Network ID
+
+На всех участниках одной overlay должен быть один и тот же `kn_...`:
+
+```text
+client
+Beacon relay
+additional relays
+service sidecars
+embedded applications
+```
+
+Разные Network ID специально не соединяются.
+
+`network_id` при этом не является паролем или admission credential.
+
+## 5. Проверка клиента
+
+### Windows
+
+Откройте Dashboard и проверьте:
+
+1. Network ID;
+2. Beacon URL;
+3. peers;
+4. routes;
+5. последние события.
+
+CLI:
+
+```powershell
+knotroute doctor --config knotroute.json --probe
+knotroute address --config knotroute.json
+```
+
+Если desktop сообщает, что node process упал, откройте каталог данных из tray menu и приложите `knotroute.log`. Desktop автоматически пытается поднять внезапно завершившийся node несколько раз, но постоянный crash loop нужно разбирать по логу, а не маскировать restart'ами.
+
+### Android
+
+Проверьте:
+
+- foreground notification KnotRoute;
+- Network profile;
+- Beacon URL;
+- экран `Диагностика`;
+- `Последняя ошибка`;
+- что после изменения профиля core действительно завершил restart.
+
+Android-клиент ждёт новую runtime generation после restart, поэтому старый ещё работающий core не должен ошибочно считаться уже перезапущенным.
+
+## 6. Проверка peer discovery
+
+Типичные признаки исправного bootstrap:
+
+- в client logs нет повторяющегося `Beacon ... EOF`;
+- появляется хотя бы один connected peer;
+- после PEX список peers может расширяться;
+- peer cache заполняется.
+
+Ошибка вида:
+
+```text
+Post "http://beacon.example.net:7447/v1/peers": EOF
+```
+
+почти всегда означает, что relay port ошибочно записали как Beacon HTTP URL. Исправьте на:
+
+```text
+https://beacon.example.net
+```
+
+## 7. Проверка sidecar
+
+```bash
+docker ps --filter label=io.knotroute.component=sidecar
+docker logs --tail=200 <container>
+```
+
+При старте ожидаются строки с node и опубликованным service address.
+
+Health:
+
+```bash
+curl -fsS http://127.0.0.1:9090/healthz
+```
+
+если health port опубликован на host.
+
+### Managed sidecar не применяет новый Beacon/target
+
+У sidecar, развёрнутого Agent'ом, должен быть:
+
+```text
+KNOTROUTE_CONFIG_FROM_ENV=true
+```
+
+В этом режиме `knotroute.json` пересоздаётся из текущих environment values при старте. Service identity при этом остаётся в persistent `/data`, поэтому `.knot` address не меняется.
+
+Если вы используете старый образ без этого режима, persistent `knotroute.json` может сохранить прежние Beacon/target после redeploy.
+
+## 8. Проверка Docker target
+
+Из network namespace sidecar приложение должно быть доступно именно по тому имени, которое указано как target.
+
+Пример:
+
+```text
+app:8080
+```
+
+Проверьте временным контейнером в той же сети:
+
+```bash
+docker run --rm --network my_stack_private curlimages/curl:latest \
+  -v http://app:8080/
+```
+
+`127.0.0.1:8080` внутри sidecar — это сам sidecar, а не соседний container.
+
+## 9. Проверка service identity
+
+У опубликованного сервиса должен появиться стабильный адрес:
+
+```text
+<service-id>.knot
+```
+
+Проверьте, что `/data` persistent. Никогда не используйте `docker compose down -v` для production sidecar, если хотите сохранить адрес.
+
+После redeploy `.knot` должен остаться прежним. Если изменился — почти наверняка была потеряна service identity.
+
+## 10. Проверка descriptor / introduction / rendezvous
+
+Если target жив, sidecar connected, но удалённый client не открывает `.knot`, проблема уже в overlay service path.
+
+Порядок:
+
+1. sidecar подключён к overlay;
+2. есть reachable introduction points;
+3. signed descriptor опубликован;
+4. client находит descriptor;
+5. client строит rendezvous circuit;
+6. service строит вторую половину rendezvous;
+7. service identity handshake проходит;
+8. после этого байты идут к local target.
+
+Для воспроизводимой диагностики полезно одновременно смотреть client и sidecar logs.
+
+## 11. Собственный `.knot` на том же node
+
+Современный core поддерживает local fast-path. Если node сам публикует service, открытие его canonical `.knot` не должно завершаться ошибкой:
+
+```text
+opening a local service through the overlay is not supported
+```
+
+Если видите это сообщение — запущен старый клиент/core. Обновите binary/image и перезапустите процесс.
+
+## 12. Проверка browser HTTPS
+
+Если overlay соединение есть, но браузер показывает certificate error:
+
+1. проверьте, что установлен **локальный CA именно этого клиента**;
+2. убедитесь, что браузер использует системный user trust store;
+3. проверьте PAC/HTTP proxy;
+4. не импортируйте Root CA другого пользователя;
+5. не нажимайте «продолжить несмотря на ошибку».
+
+Для разделения проблем сначала попробуйте `.knot` через HTTP proxy/SDK без browser TLS, затем отдельно разбирайте CA.
+
+## 13. Что приложить к bug report
+
+Минимальный полезный набор:
+
+```text
+KnotRoute version каждого компонента
+OS / architecture
+Network ID (можно показать: он не secret)
+Beacon HTTP URL
+relay endpoint
+client logs
+sidecar logs
+Control job error/result
+Docker compose relevant services
+точный .knot request, который не работает
+```
+
+Не публикуйте:
+
+- identity private keys;
+- Control password;
+- Agent enrollment token;
+- private CA key;
+- application secrets.

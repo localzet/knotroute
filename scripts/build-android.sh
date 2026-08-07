@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION="${VERSION:-3.0.0}"
+VERSION="${VERSION:-dev}"
 : "${ANDROID_HOME:?ANDROID_HOME must point to the Android SDK}"
 if [ -x "$ROOT/android/gradlew" ]; then
   GRADLE="$ROOT/android/gradlew"

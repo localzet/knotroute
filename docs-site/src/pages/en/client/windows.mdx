@@ -38,3 +38,7 @@ knotroute address --config knotroute.json
 ```
 
 Check Network ID, peer count, routes/circuits and recent events in the dashboard.
+
+## Stability and diagnostics
+
+Desktop data and logs live under `%LOCALAPPDATA%\\KnotRoute`. The tray controller now validates config/identity before starting the daemon and waits for the old daemon to actually exit before restart, preventing the previous stop/start race. Set `KNOTROUTE_LANG=ru` to force Russian tray strings when Windows UI language is not Russian.

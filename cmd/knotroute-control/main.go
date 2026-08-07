@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/subtle"
@@ -23,11 +24,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/localzet/knotroute/internal/discovery"
 	"github.com/localzet/knotroute/internal/ops"
 	"github.com/localzet/knotroute/internal/ops/controlweb"
 )
 
 const sessionTTL = 12 * time.Hour
+
+var errUnknownAgent = errors.New("unknown agent")
+var errUnknownJob = errors.New("unknown job")
 
 type server struct {
 	store       *ops.Store
@@ -90,6 +95,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/v1/session", s.adminOnly(s.logout))
 	mux.HandleFunc("GET /api/v1/overview", s.adminOnly(s.overview))
 	mux.HandleFunc("POST /api/v1/networks", s.adminOnly(s.saveNetwork))
+	mux.HandleFunc("GET /api/v1/beacons/check", s.adminOnly(s.checkBeacon))
 	mux.HandleFunc("POST /api/v1/jobs", s.adminOnly(s.createJob))
 	mux.HandleFunc("POST /api/v1/onboarding/render", s.adminOnly(s.renderOnboarding))
 	mux.HandleFunc("GET /api/v1/onboarding/qr", s.adminOnly(s.qr))
@@ -214,17 +220,17 @@ func (s *server) saveNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	beacons := make([]string, 0, len(req.Beacons))
-	for _, b := range req.Beacons {
-		b = strings.TrimSpace(b)
-		if b == "" {
-			continue
-		}
-		u, err := url.Parse(b)
-		if err != nil || u.Scheme != "https" || u.Host == "" {
-			jsonError(w, 400, "beacon URLs must be HTTPS URLs")
+	seenBeacons := map[string]bool{}
+	for _, raw := range req.Beacons {
+		base, err := discovery.ValidateBeaconURL(raw)
+		if err != nil {
+			jsonProblem(w, http.StatusBadRequest, "beacon_url_invalid", "Некорректный Beacon URL", "beacons", err.Error())
 			return
 		}
-		beacons = append(beacons, strings.TrimRight(b, "/"))
+		if !seenBeacons[base] {
+			seenBeacons[base] = true
+			beacons = append(beacons, base)
+		}
 	}
 	now := time.Now().UTC()
 	err := s.store.Update(func(st *ops.State) error {
@@ -242,6 +248,35 @@ func (s *server) saveNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonOut(w, 200, map[string]any{"ok": true, "network_id": req.ID})
 }
+func (s *server) checkBeacon(w http.ResponseWriter, r *http.Request) {
+	base, err := discovery.ValidateBeaconURL(r.URL.Query().Get("url"))
+	if err != nil {
+		jsonProblem(w, http.StatusBadRequest, "beacon_url_invalid", "Некорректный Beacon URL", "url", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/healthz", nil)
+	if err != nil {
+		jsonProblem(w, http.StatusBadRequest, "beacon_request_invalid", "Не удалось сформировать запрос к Beacon", "url", err.Error())
+		return
+	}
+	started := time.Now()
+	client := &http.Client{Timeout: 6 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonProblem(w, http.StatusBadGateway, "beacon_unreachable", "Beacon недоступен", "url", err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode != http.StatusOK {
+		jsonProblem(w, http.StatusBadGateway, "beacon_unhealthy", "Beacon health-check вернул ошибку", "url", fmt.Sprintf("%s: %s", resp.Status, strings.TrimSpace(string(body))))
+		return
+	}
+	jsonOut(w, http.StatusOK, map[string]any{"ok": true, "url": base, "latency_ms": time.Since(started).Milliseconds()})
+}
+
 func (s *server) createJob(w http.ResponseWriter, r *http.Request) {
 	var req jobRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -255,14 +290,18 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) {
 	var job ops.Job
 	err := s.store.Update(func(st *ops.State) error {
 		if _, ok := st.Agents[req.AgentID]; !ok {
-			return errors.New("unknown agent")
+			return errUnknownAgent
 		}
 		job = ops.Job{ID: ops.NewID("job"), AgentID: req.AgentID, Kind: req.Kind, Payload: req.Payload, Status: "pending", CreatedAt: time.Now().UTC()}
 		st.Jobs[job.ID] = job
 		return nil
 	})
 	if err != nil {
-		jsonError(w, 400, err.Error())
+		if errors.Is(err, errUnknownAgent) {
+			jsonProblem(w, http.StatusNotFound, "agent_not_found", "Агент не найден", "agent_id", "Обновите список агентов и выберите подключённый сервер.")
+		} else {
+			jsonProblem(w, http.StatusInternalServerError, "state_persist_failed", "Не удалось сохранить задачу", "", err.Error())
+		}
 		return
 	}
 	jsonOut(w, 201, job)
@@ -444,7 +483,7 @@ func (s *server) jobResult(w http.ResponseWriter, r *http.Request, id string, bo
 	err := s.store.Update(func(st *ops.State) error {
 		j, ok := st.Jobs[result.JobID]
 		if !ok || j.AgentID != id {
-			return errors.New("unknown job")
+			return errUnknownJob
 		}
 		j.Status = result.Status
 		j.Result = trim(result.Result, 32<<10)
@@ -453,7 +492,11 @@ func (s *server) jobResult(w http.ResponseWriter, r *http.Request, id string, bo
 		return nil
 	})
 	if err != nil {
-		jsonError(w, 400, err.Error())
+		if errors.Is(err, errUnknownJob) {
+			jsonProblem(w, http.StatusNotFound, "job_not_found", "Задача не найдена", "job_id", "Агент мог получить устаревшую задачу после восстановления Control state.")
+		} else {
+			jsonProblem(w, http.StatusInternalServerError, "state_persist_failed", "Не удалось сохранить результат задачи", "", err.Error())
+		}
 		return
 	}
 	jsonOut(w, 200, map[string]any{"ok": true})
@@ -471,6 +514,13 @@ func buildOnboarding(n ops.Network, platform, name, language string) (onboarding
 	}
 	uri := "knotroute://join?" + q.Encode()
 	beacons := strings.Join(n.Beacons, "\n")
+	if beacons == "" {
+		if strings.EqualFold(language, "ru") {
+			beacons = "(Beacon URL не настроен в Control; добавьте существующий Beacon HTTP(S) URL или передайте пользователю другой bootstrap path)"
+		} else {
+			beacons = "(No Beacon URL is configured in Control; add an existing Beacon HTTP(S) URL or provide another bootstrap path)"
+		}
+	}
 	var text string
 	ru := strings.EqualFold(language, "ru")
 	if ru {
@@ -541,7 +591,10 @@ func jsonOut(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 func jsonError(w http.ResponseWriter, status int, msg string) {
-	jsonOut(w, status, map[string]string{"error": msg})
+	jsonOut(w, status, map[string]any{"error": msg})
+}
+func jsonProblem(w http.ResponseWriter, status int, code, message, field, hint string) {
+	jsonOut(w, status, map[string]any{"error": message, "code": code, "field": field, "hint": hint})
 }
 func env(k, d string) string {
 	if v := strings.TrimSpace(os.Getenv(k)); v != "" {

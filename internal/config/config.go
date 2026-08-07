@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/localzet/knotroute/internal/discovery"
 	"github.com/localzet/knotroute/internal/naming"
 	"github.com/localzet/knotroute/internal/networkid"
 )
@@ -120,6 +121,18 @@ func Default() Config {
 	}
 }
 
+func (c *Config) Normalize() {
+	if strings.TrimSpace(c.Proxy.DefaultHTTP) == "" {
+		c.Proxy.DefaultHTTP = "http"
+	}
+	if strings.TrimSpace(c.Proxy.DefaultHTTPS) == "" {
+		c.Proxy.DefaultHTTPS = "https"
+	}
+	if strings.TrimSpace(c.Discovery.Interval) == "" {
+		c.Discovery.Interval = "30s"
+	}
+}
+
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -129,6 +142,7 @@ func Load(path string) (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
+	cfg.Normalize()
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return Config{}, err
@@ -293,12 +307,6 @@ func (c Config) Validate() error {
 			errs = append(errs, err)
 		}
 	}
-	if c.Proxy.DefaultHTTP == "" {
-		c.Proxy.DefaultHTTP = "http"
-	}
-	if c.Proxy.DefaultHTTPS == "" {
-		c.Proxy.DefaultHTTPS = "https"
-	}
 	if !serviceName.MatchString(c.Proxy.DefaultHTTP) {
 		errs = append(errs, errors.New("proxy.default_http_service is invalid"))
 	}
@@ -311,15 +319,12 @@ func (c Config) Validate() error {
 		}
 	}
 	if c.Discovery.Enabled {
-		if c.Discovery.Interval == "" {
-			c.Discovery.Interval = "30s"
-		}
 		if d, err := time.ParseDuration(c.Discovery.Interval); err != nil || d < 5*time.Second {
 			errs = append(errs, errors.New("discovery.interval must be at least 5s"))
 		}
 		for i, u := range c.Discovery.Beacons {
-			if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-				errs = append(errs, fmt.Errorf("discovery.beacons[%d] must use http or https", i))
+			if _, err := discovery.ValidateBeaconURL(u); err != nil {
+				errs = append(errs, fmt.Errorf("discovery.beacons[%d]: %w", i, err))
 			}
 		}
 	}

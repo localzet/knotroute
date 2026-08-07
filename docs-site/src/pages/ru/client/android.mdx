@@ -60,3 +60,77 @@ knotroute://join?network_id=kn_...&name=Production&beacon=https%3A%2F%2Fbeacon.e
 - logs/diagnostics внутри приложения.
 
 Для проблем конкретно с `.knot` страницей смотрите [troubleshooting клиентов](/ru/client/troubleshooting).
+
+## Состояния запуска приложения
+
+Foreground service стартует отдельно от Activity и удерживает embedded KnotRoute core. В интерфейсе состояния следует читать так:
+
+```text
+Запуск…      core ещё создаётся/перезапускается
+Подключено   embedded node и HTTP proxy подняты
+Ошибка       core не стартовал; смотрите «Диагностика»
+```
+
+Статус `Подключено` означает готовность локального core, а не гарантирует, что уже найден remote peer. Для сетевой диагностики всё равно проверяйте Beacon/profile и доступность test service.
+
+## Edge-to-edge и системные панели
+
+Начиная с современных target SDK Android применяет edge-to-edge layout. KnotRoute учитывает status/navigation bars и display cutout через `WindowInsets`, поэтому header и нижняя навигация не должны уходить под системные панели.
+
+Если после обновления старый APK всё ещё рисуется под status bar, сначала убедитесь, что установлен именно новый build, а не предыдущий artifact.
+
+## Перезапуск после смены профиля
+
+После **Сохранить и перезапустить** приложение:
+
+1. сохраняет выбранный Network Profile;
+2. просит foreground service выполнить restart;
+3. останавливает старый embedded core;
+4. запускает новый core с обновлёнными Network ID/Beacon;
+5. повторно применяет WebView proxy, когда core действительно готов.
+
+Это устраняет старую гонку, когда WebView создавался раньше core и оставался без proxy до полного перезапуска приложения.
+
+## Какие поля нужны обычному пользователю
+
+Основные:
+
+- имя профиля;
+- Network ID;
+- Beacon URL.
+
+Количество circuit hops спрятано в **Дополнительные настройки**. Оставляйте default, пока не диагностируете конкретную topology проблему.
+
+## Правильный Beacon URL
+
+Допустимо:
+
+```text
+https://beacon.example.net
+http://192.168.1.10:8080
+```
+
+Недопустимо:
+
+```text
+http://beacon.example.net:7447
+https://beacon.example.net/some/path
+```
+
+`7447` — relay transport. Android-клиент теперь проверяет это до сохранения профиля.
+
+## Что копируется из «Диагностики»
+
+Раздел показывает как минимум node address, локальный HTTP proxy и последнюю ошибку core. Эти данные удобно прикладывать к bug report, но не публикуйте private identity/CA key или contents app private storage.
+
+## Если WebView не открывает `.knot`
+
+Проверяйте в таком порядке:
+
+1. core имеет состояние «Подключено»;
+2. профиль содержит правильный Network ID;
+3. Beacon HTTP(S) URL доступен с телефона;
+4. сервис открывается с другого KnotRoute client;
+5. только после этого проверяйте CA/TLS для `https://...knot`.
+
+Для изоляции TLS проблемы можно диагностировать plain HTTP `.knot` endpoint, если конкретный сервисный сценарий это допускает. Сам overlay traffic при этом остаётся защищён KnotRoute service session; browser HTTPS — отдельный локальный compatibility layer.

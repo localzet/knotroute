@@ -7,6 +7,7 @@ import java.lang.reflect.InvocationTargetException
 
 object KnotRuntime {
     @Volatile private var client: Any? = null
+    @Volatile private var generation: Long = 0
     @Volatile var lastError: String? = null
         private set
 
@@ -30,6 +31,7 @@ object KnotRuntime {
                 ?: error("KnotRoute core returned null client")
             invoke(instance, "start")
             client = instance
+            generation++
             lastError = null
         } catch (t: Throwable) {
             lastError = root(t).message ?: root(t).javaClass.simpleName
@@ -41,9 +43,11 @@ object KnotRuntime {
     fun stop() {
         client?.let { runCatching { invoke(it, "stop") } }
         client = null
+        generation++
     }
 
     fun ready(): Boolean = client != null
+    fun generation(): Long = generation
     fun nodeAddress(): String = client?.let { invoke(it, "nodeaddress") as? String } ?: ""
     fun proxyUrl(): String = client?.let { invoke(it, "httpproxyurl") as? String } ?: "http://127.0.0.1:19478"
     fun rootCaPem(): String = client?.let { invoke(it, "rootcapem") as? String } ?: error("KnotRoute core is not running")

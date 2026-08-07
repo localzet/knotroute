@@ -205,3 +205,60 @@ func TestSOCKS5ResolvesServiceKnotDomainAcrossRelay(t *testing.T) {
 		t.Fatalf("echo mismatch: %q", got)
 	}
 }
+
+func TestHTTPProxyOpensLocalPublishedService(t *testing.T) {
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "local=%s", r.URL.Path)
+	})}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go server.Serve(listener)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg := config.Default()
+	cfg.Proxy.HTTP = "127.0.0.1:0"
+	cfg.Proxy.SOCKS = ""
+	cfg.Services = []config.Service{{Name: "http", Target: listener.Addr().String(), Allow: []string{"*"}, Publish: true}}
+	node := startTestNodeWithProxy(t, ctx, cfg)
+	defer node.Stop()
+
+	var serviceDomain string
+	for _, service := range node.Status().Services {
+		if service.Name == "http" && service.Published {
+			serviceDomain = service.Domain
+			break
+		}
+	}
+	if serviceDomain == "" {
+		t.Fatal("published service domain missing")
+	}
+	var rawProxy string
+	for _, address := range node.Status().Proxy.Listeners {
+		if strings.HasPrefix(address, "http://") {
+			rawProxy = address
+			break
+		}
+	}
+	proxyURL, err := url.Parse(rawProxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}, Timeout: 5 * time.Second}
+	response, err := client.Get("http://" + serviceDomain + "/self-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "local=/self-check") {
+		t.Fatalf("status=%d body=%q", response.StatusCode, body)
+	}
+}

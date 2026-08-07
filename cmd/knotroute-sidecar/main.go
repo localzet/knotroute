@@ -29,10 +29,14 @@ func main() {
 func run() error {
 	dataDir := env("KNOTROUTE_DATA_DIR", "/data")
 	configPath := env("KNOTROUTE_CONFIG", filepath.Join(dataDir, "knotroute.json"))
-	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
+	_, statErr := os.Stat(configPath)
+	fromEnv := envBool("KNOTROUTE_CONFIG_FROM_ENV", false)
+	if fromEnv || errors.Is(statErr, os.ErrNotExist) {
 		if err := generateConfig(configPath); err != nil {
 			return err
 		}
+	} else if statErr != nil {
+		return statErr
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -93,6 +97,7 @@ func generateConfig(path string) error {
 	cfg.Proxy.SOCKS = ""
 	cfg.Proxy.Direct = false
 	cfg.CA.Enabled = false
+	cfg.Discovery.LAN = false
 	cfg.Listen = []string{env("KNOTROUTE_LISTEN", "0.0.0.0:7447")}
 	if value := strings.TrimSpace(os.Getenv("KNOTROUTE_NETWORK_ID")); value != "" {
 		cfg.NetworkID = value
@@ -123,6 +128,7 @@ func generateConfig(path string) error {
 	if len(cfg.Services) == 0 {
 		return errors.New("no services configured; set KNOTROUTE_SERVICES_JSON or KNOTROUTE_SERVICE_NAME/TARGET")
 	}
+	cfg.Normalize()
 	for i := range cfg.Services {
 		if cfg.Services[i].IdentityFile == "" {
 			cfg.Services[i].IdentityFile = filepath.Join("services", cfg.Services[i].Name+".identity.json")
@@ -152,4 +158,16 @@ func env(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envBool(name string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

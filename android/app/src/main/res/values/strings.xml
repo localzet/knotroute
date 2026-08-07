@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">KnotRoute</string>
+    <string name="client_subtitle">OVERLAY CLIENT</string>
     <string name="channel_name">KnotRoute network</string>
     <string name="notification_running">Encrypted overlay is connected</string>
     <string name="home">Home</string><string name="browser">Browser</string><string name="network">Network</string><string name="diagnostics">Diagnostics</string>
@@ -13,4 +14,11 @@
     <string name="profile_imported">Network profile imported</string><string name="invalid_profile">Invalid KnotRoute join profile</string><string name="copy">Copy</string><string name="copied">Copied</string>
     <string name="last_error">Last error</string><string name="webview_proxy_unsupported">This WebView does not support process proxy override</string>
     <string name="no_error">No errors</string><string name="about_network">The network profile contains connection metadata only. Private keys never come from a QR code.</string>
+    <string name="notification_starting">Starting KnotRoute…</string>
+    <string name="notification_failed">KnotRoute failed to start: %1$s</string>
+    <string name="advanced_settings">Advanced settings</string>
+    <string name="invalid_network_id">Invalid Network ID. Expected a kn_… identifier.</string>
+    <string name="invalid_beacon_url">Invalid Beacon URL. Enter the Beacon HTTP(S) API URL.</string>
+    <string name="beacon_relay_port_error">Port 7447 is the relay transport, not the Beacon HTTP API. Use the Beacon HTTPS URL or HTTP port 8080.</string>
+    <string name="beacon_root_error">Use the Beacon root URL without /v1/peers or another path.</string>
 </resources>

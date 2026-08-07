@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/localzet/knotroute/internal/discovery"
 	"github.com/localzet/knotroute/internal/ops"
 )
 
@@ -59,7 +61,7 @@ func run() error {
 	name := env("KNOTROUTE_AGENT_NAME", hostname())
 	poll := envDuration("KNOTROUTE_AGENT_POLL", 10*time.Second)
 	dockerEnabled := envBool("KNOTROUTE_AGENT_DOCKER", false)
-	a := &agent{controlURL: control, enrollToken: strings.TrimSpace(os.Getenv("KNOTROUTE_CONTROL_ENROLL_TOKEN")), name: name, tags: splitCSV(os.Getenv("KNOTROUTE_AGENT_TAGS")), dataDir: dataDir, workDir: filepath.Join(dataDir, "stacks"), poll: poll, docker: dockerEnabled, imageTag: env("KNOTROUTE_AGENT_IMAGE_TAG", ops.Version), http: &http.Client{Timeout: 30 * time.Second}}
+	a := &agent{controlURL: control, enrollToken: strings.TrimSpace(os.Getenv("KNOTROUTE_CONTROL_ENROLL_TOKEN")), name: name, tags: splitCSV(os.Getenv("KNOTROUTE_AGENT_TAGS")), dataDir: dataDir, workDir: filepath.Join(dataDir, "stacks"), poll: poll, docker: dockerEnabled, imageTag: env("KNOTROUTE_AGENT_IMAGE_TAG", managedImageTag(ops.Version)), http: &http.Client{Timeout: 30 * time.Second}}
 	if err := a.loadIdentity(); err != nil {
 		return err
 	}
@@ -122,9 +124,34 @@ func (a *agent) loadIdentity() error {
 	return nil
 }
 func (a *agent) saveIdentity() error {
-	raw, _ := json.MarshalIndent(identityDisk{PrivateKey: base64.RawStdEncoding.EncodeToString(a.private), AgentID: a.id}, "", "  ")
+	raw, err := json.MarshalIndent(identityDisk{PrivateKey: base64.RawStdEncoding.EncodeToString(a.private), AgentID: a.id}, "", "  ")
+	if err != nil {
+		return err
+	}
 	raw = append(raw, '\n')
-	return os.WriteFile(filepath.Join(a.dataDir, "agent-identity.json"), raw, 0o600)
+	path := filepath.Join(a.dataDir, "agent-identity.json")
+	tmp, err := os.CreateTemp(a.dataDir, ".agent-identity-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 func (a *agent) enroll() error {
 	body, _ := json.Marshal(ops.EnrollRequest{Name: a.name, PublicKey: base64.RawStdEncoding.EncodeToString(a.public), Token: a.enrollToken, Tags: a.tags})
@@ -217,17 +244,31 @@ func (a *agent) deployBeacon(job ops.Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	beaconURL, err = discovery.ValidateBeaconURL(beaconURL)
+	if err != nil {
+		return "", fmt.Errorf("beacon_url: %w", err)
+	}
 	advertise, err := requiredString(p, "advertise")
 	if err != nil {
 		return "", err
 	}
-	httpPort := number(p, "http_port", 18080, 1, 65535)
-	relayPort := number(p, "relay_port", 7447, 1, 65535)
+	httpPort, err := boundedNumber(p, "http_port", 18080, 1, 65535)
+	if err != nil {
+		return "", err
+	}
+	_, advertisedPort, err := net.SplitHostPort(advertise)
+	if err != nil {
+		return "", fmt.Errorf("advertise must be host:port: %w", err)
+	}
+	relayPort, err := strconv.Atoi(advertisedPort)
+	if err != nil || relayPort < 1 || relayPort > 65535 {
+		return "", errors.New("advertise port must be 1..65535")
+	}
 	slug, err := slug(name)
 	if err != nil {
 		return "", err
 	}
-	image := "ghcr.io/localzet/knotroute-beacon:latest"
+	image := "ghcr.io/localzet/knotroute-beacon:" + a.imageTag
 	if v := optionalString(p, "image"); v != "" {
 		if !strings.HasPrefix(v, "ghcr.io/localzet/knotroute-beacon:") {
 			return "", errors.New("unsupported beacon image")
@@ -238,31 +279,7 @@ func (a *agent) deployBeacon(job ops.Job) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	compose := fmt.Sprintf(`services:
-  beacon:
-    image: %q
-    restart: unless-stopped
-    labels:
-      io.knotroute.managed: "true"
-      io.knotroute.component: "beacon"
-      io.knotroute.component-id: %q
-      io.knotroute.network-id: %q
-      io.knotroute.public-url: %q
-    ports:
-      - %q
-      - %q
-    volumes:
-      - data:/data
-    environment:
-      KNOTROUTE_NETWORK_ID: %q
-      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
-      KNOTROUTE_BEACON_RELAY: "true"
-      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
-      KNOTROUTE_BEACON_RELAY_ADVERTISE: %q
-      KNOTROUTE_BEACON_DATA: "/data"
-volumes:
-  data:
-`, image, "beacon-"+slug, network, beaconURL, fmt.Sprintf("%d:8080", httpPort), fmt.Sprintf("%d:7447", relayPort), network, advertise)
+	compose := renderBeaconCompose(image, "beacon-"+slug, network, beaconURL, httpPort, relayPort, advertise)
 	if err := writeCompose(dir, compose); err != nil {
 		return "", err
 	}
@@ -295,8 +312,15 @@ func (a *agent) deploySidecar(job ops.Job) (string, error) {
 		return "", errors.New("invalid Docker network name")
 	}
 	beacons := stringSlice(p, "beacons")
+	for i, raw := range beacons {
+		normalized, err := discovery.ValidateBeaconURL(raw)
+		if err != nil {
+			return "", fmt.Errorf("beacon %d: %w", i+1, err)
+		}
+		beacons[i] = normalized
+	}
 	if len(beacons) == 0 {
-		return "", errors.New("at least one beacon is required")
+		return "", errors.New("network has no Beacon HTTP URLs; add the already-running Beacon to the network profile in Control, or configure another discovery path")
 	}
 	slugName, err := slug(name)
 	if err != nil {
@@ -312,13 +336,58 @@ func (a *agent) deploySidecar(job ops.Job) (string, error) {
 	advertise := optionalString(p, "advertise")
 	ports := ""
 	if advertise != "" {
-		ports = "    ports:\n      - \"7447:7447\"\n"
+		_, hostPort, splitErr := net.SplitHostPort(advertise)
+		if splitErr != nil {
+			return "", fmt.Errorf("advertise must be host:port: %w", splitErr)
+		}
+		portNumber, convErr := strconv.Atoi(hostPort)
+		if convErr != nil || portNumber < 1 || portNumber > 65535 {
+			return "", errors.New("advertise port must be 1..65535")
+		}
+		ports = fmt.Sprintf("    ports:\n      - \"%d:7447\"\n", portNumber)
 	}
 	dir := filepath.Join(a.workDir, "sidecar-"+slugName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	compose := fmt.Sprintf(`services:
+	compose := renderSidecarCompose(image, "sidecar-"+slugName, networkID, name, target, ports, beacons, advertise, dockerNetwork)
+	if err := writeCompose(dir, compose); err != nil {
+		return "", err
+	}
+	out, err := a.compose(dir, "up", "-d", "--pull", "always")
+	return out, err
+}
+
+func renderBeaconCompose(image, componentID, networkID, beaconURL string, httpPort, relayPort int, advertise string) string {
+	return fmt.Sprintf(`services:
+  beacon:
+    image: %q
+    restart: unless-stopped
+    labels:
+      io.knotroute.managed: "true"
+      io.knotroute.component: "beacon"
+      io.knotroute.component-id: %q
+      io.knotroute.network-id: %q
+      io.knotroute.public-url: %q
+    ports:
+      - %q
+      - %q
+    volumes:
+      - data:/data
+    environment:
+      KNOTROUTE_NETWORK_ID: %q
+      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
+      KNOTROUTE_BEACON_RELAY: "true"
+      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
+      KNOTROUTE_BEACON_RELAY_ADVERTISE: %q
+      KNOTROUTE_BEACON_DATA: "/data"
+volumes:
+  data:
+`, image, componentID, networkID, beaconURL, fmt.Sprintf("%d:8080", httpPort), fmt.Sprintf("%d:7447", relayPort), networkID, advertise)
+}
+
+func renderSidecarCompose(image, componentID, networkID, name, target, ports string, beacons []string, advertise, dockerNetwork string) string {
+	return fmt.Sprintf(`services:
   knotroute:
     image: %q
     restart: unless-stopped
@@ -334,6 +403,7 @@ func (a *agent) deploySidecar(job ops.Job) (string, error) {
 %s    volumes:
       - data:/data
     environment:
+      KNOTROUTE_CONFIG_FROM_ENV: "true"
       KNOTROUTE_NETWORK_ID: %q
       KNOTROUTE_BEACONS: %q
       KNOTROUTE_SERVICE_NAME: %q
@@ -345,12 +415,7 @@ networks:
     name: %q
 volumes:
   data:
-`, image, "sidecar-"+slugName, networkID, name, target, ports, networkID, strings.Join(beacons, ","), name, target, advertise, dockerNetwork)
-	if err := writeCompose(dir, compose); err != nil {
-		return "", err
-	}
-	out, err := a.compose(dir, "up", "-d", "--pull", "always")
-	return out, err
+`, image, componentID, networkID, name, target, ports, networkID, strings.Join(beacons, ","), name, target, advertise, dockerNetwork)
 }
 
 func (a *agent) restartComponent(job ops.Job) (string, error) {
@@ -506,6 +571,15 @@ func command(timeout time.Duration, name string, args ...string) (string, error)
 	}
 	return text, nil
 }
+
+func managedImageTag(version string) string {
+	version = strings.TrimSpace(strings.TrimPrefix(version, "v"))
+	if version == "" || version == "dev" || strings.HasSuffix(version, "-dev") {
+		return "latest"
+	}
+	return version
+}
+
 func imageVersion(image string) string {
 	idx := strings.LastIndex(image, ":")
 	if idx < 0 || idx == len(image)-1 {
@@ -554,7 +628,11 @@ func normalizeStatus(state, status string) string {
 	if state != "" {
 		return state
 	}
-	return strings.ToLower(strings.Fields(status)[0])
+	fields := strings.Fields(status)
+	if len(fields) == 0 {
+		return "unknown"
+	}
+	return strings.ToLower(fields[0])
 }
 func requiredString(m map[string]any, k string) (string, error) {
 	v := optionalString(m, k)
@@ -586,16 +664,20 @@ func stringSlice(m map[string]any, k string) []string {
 	}
 	return out
 }
-func number(m map[string]any, k string, d, min, max int) int {
-	v, ok := m[k].(float64)
-	if !ok {
-		return d
+func boundedNumber(m map[string]any, k string, d, min, max int) (int, error) {
+	v, ok := m[k]
+	if !ok || v == nil {
+		return d, nil
 	}
-	n := int(v)
+	number, ok := v.(float64)
+	if !ok || number != float64(int(number)) {
+		return 0, fmt.Errorf("%s must be an integer", k)
+	}
+	n := int(number)
 	if n < min || n > max {
-		return d
+		return 0, fmt.Errorf("%s must be %d..%d", k, min, max)
 	}
-	return n
+	return n, nil
 }
 func validNetworkID(v string) bool {
 	if !strings.HasPrefix(v, "kn_") || len(v) < 20 || len(v) > 90 {

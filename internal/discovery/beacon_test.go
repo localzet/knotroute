@@ -75,3 +75,18 @@ func TestBeaconBootstrapCandidateUsesRequestHost(t *testing.T) {
 		t.Fatalf("unexpected bootstrap candidate %#v", peers)
 	}
 }
+
+func TestValidateBeaconURL(t *testing.T) {
+	good := []string{"https://beacon.example", "http://127.0.0.1:8080", "https://beacon.example/"}
+	for _, raw := range good {
+		if _, err := ValidateBeaconURL(raw); err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+	}
+	bad := []string{"beacon.example", "http://beacon.example:7447", "https://beacon.example/v1/peers", "https://u:p@beacon.example"}
+	for _, raw := range bad {
+		if _, err := ValidateBeaconURL(raw); err == nil {
+			t.Fatalf("expected invalid %s", raw)
+		}
+	}
+}

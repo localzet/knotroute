@@ -69,3 +69,68 @@ knotroute address --config knotroute.json
 ## Когда использовать Windows Service
 
 Service wrapper полезен для unattended host или машины, где KnotRoute должен работать независимо от пользовательской сессии. Для обычного desktop-клиента tray application проще и понятнее.
+
+## Где лежат конфигурация и логи
+
+Desktop controller использует:
+
+```text
+%LOCALAPPDATA%\KnotRoute\
+├─ knotroute.json
+├─ knotroute.log
+├─ identity.json / связанные identity-файлы
+├─ peers.json
+├─ ca\
+└─ proxy-state.json
+```
+
+Точный набор файлов зависит от включённых функций. Перед экспериментами с identity/CA лучше сохранить эту папку.
+
+Если node неожиданно завершается, tray controller показывает предупреждение и tail `knotroute.log`. Он выполняет ограниченное число автоматических restart attempts, но не должен бесконечно скрывать crash-loop.
+
+## Безопасный restart
+
+Команда **Перезапустить узел** сначала ждёт фактической остановки прежнего daemon и только затем запускает новый. Это важно: старое поведение с фиксированной задержкой могло увидеть ещё живой dashboard старого процесса, решить, что новый node уже запущен, а через мгновение остаться без daemon.
+
+Перед запуском desktop также проверяет config/identity через CLI. Некорректный JSON или identity теперь должен давать понятное сообщение, а не бесконечный restart-loop.
+
+## Русский интерфейс
+
+Dashboard поставляется с русскими пользовательскими подписями. Tray выбирает язык по Windows UI language. Для принудительного русского языка можно запустить с:
+
+```powershell
+$env:KNOTROUTE_LANG = "ru"
+.\knotroute-desktop.exe
+```
+
+Для постоянного override переменную можно задать в пользовательском окружении Windows.
+
+## Что скрыто в «Дополнительно»
+
+Обычному клиенту чаще всего достаточно:
+
+- Network ID;
+- Beacon HTTP(S) URL;
+- локального HTTP/SOCKS proxy, если используются внешние приложения.
+
+Тонкие параметры discovery, listen/advertise, circuit/directory и routing находятся в сворачиваемых секциях. Не меняйте их при первой диагностике без конкретной причины.
+
+## Если клиент «падает»
+
+Сначала откройте `%LOCALAPPDATA%\KnotRoute\knotroute.log`, затем проверьте:
+
+```powershell
+knotroute doctor --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json" --probe
+knotroute id --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json"
+```
+
+Типовые причины:
+
+1. Beacon указан как `http://host:7447` вместо HTTP(S) URL;
+2. Network ID отличается от server network;
+3. повреждён/недоступен identity file;
+4. локальный порт Dashboard/SOCKS/HTTP proxy занят другим процессом;
+5. security software запрещает запуск daemon или loopback listener;
+6. Beacon HTTP доступен, но relay `7447/tcp` недоступен извне.
+
+Не начинайте с переустановки CA: CA влияет на browser HTTPS после того, как overlay уже работает, но не создаёт peer connectivity.

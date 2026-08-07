@@ -1,0 +1,93 @@
+# Diagnostic runbook
+
+Use this page to isolate a live KnotRoute failure layer by layer. Do not treat Beacon HTTP, relay transport, overlay routing, service descriptors and the local application target as the same connection.
+
+## Record the topology first
+
+```text
+Network ID       kn_...
+Beacon HTTP URL  https://beacon.example.net
+Relay endpoint   relay.example.net:7447
+Client version   ...
+Beacon version   ...
+Sidecar version  ...
+Service .knot    ...
+```
+
+The Beacon HTTP URL and relay endpoint are different:
+
+| Purpose | Example |
+| --- | --- |
+| discovery API | `https://beacon.example.net` |
+| raw relay transport | `relay.example.net:7447` |
+
+Never configure `http://beacon.example.net:7447` as a Beacon URL.
+
+## Control
+
+Control is optional to the data plane. An existing manually deployed Beacon should be added to `Networks → Edit` as its HTTP(S) URL; you do not need to deploy another Beacon through Control.
+
+A network profile may contain zero Beacons. A Control-managed sidecar needs a bootstrap discovery path, so add the existing Beacon URL before publishing that sidecar.
+
+Check:
+
+```bash
+curl -fsS https://control.example.net/healthz
+```
+
+## Beacon HTTP
+
+```bash
+curl -v https://beacon.example.net/healthz
+```
+
+A healthy HTTP endpoint does not prove that the relay port is reachable.
+
+## Relay TCP
+
+```bash
+nc -vz relay.example.net 7447
+```
+
+On Windows:
+
+```powershell
+Test-NetConnection relay.example.net -Port 7447
+```
+
+If HTTP works and TCP does not, inspect host firewall/security groups, Docker port publishing and the advertised relay endpoint.
+
+## Client
+
+Check Network ID, Beacon URL, connected peers, routes and recent events. A repeated error such as:
+
+```text
+Post "http://beacon.example.net:7447/v1/peers": EOF
+```
+
+means the raw relay port was configured as the HTTP discovery URL.
+
+## Sidecar and application target
+
+Check sidecar logs and make sure the target is reachable from the same Docker network. `localhost:8080` inside a sidecar means the sidecar itself; a sibling application normally needs a target such as `app:8080`.
+
+Control-managed sidecars use `KNOTROUTE_CONFIG_FROM_ENV=true`, so updated Beacon/target settings are regenerated on restart while persistent service identities remain under `/data`.
+
+## Service path
+
+Once the target and peer connectivity work, debug the service path in this order:
+
+1. introduction points are reachable;
+2. descriptor is published;
+3. client resolves the descriptor;
+4. rendezvous circuits are built;
+5. service identity handshake succeeds;
+6. traffic reaches the local target.
+
+## Local self-access
+
+Current core has a local fast path for a service published by the same node. The legacy error `opening a local service through the overlay is not supported` indicates an old core binary/image.
+
+## Useful bug-report data
+
+Include component versions, OS/architecture, Network ID, Beacon HTTP URL, relay endpoint, client/sidecar logs, Control job result and the failing request. Never publish identity private keys, Control credentials, enrollment tokens or CA private keys.

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,149 +10,149 @@
 <body>
   <div class="shell">
     <header>
-      <div class="brand"><span class="mark">K</span><div><h1>KnotRoute</h1><p>private service overlay</p></div></div>
+      <div class="brand"><span class="mark">K</span><div><h1>KnotRoute</h1><p>зашифрованная overlay-сеть</p></div></div>
       <div class="header-actions">
-        <div class="health"><span id="pulse"></span><strong id="healthText">Connecting</strong></div>
-        <button class="button ghost" id="restartNode">Restart</button>
-        <button class="button danger" id="stopNode">Stop</button>
+        <div class="health"><span id="pulse"></span><strong id="healthText">Подключение</strong></div>
+        <button class="button ghost" id="restartNode">Перезапустить</button>
+        <button class="button danger" id="stopNode">Остановить</button>
       </div>
     </header>
 
-    <nav class="tabs" aria-label="Dashboard sections">
-      <button class="tab active" data-tab="overview">Overview</button>
-      <button class="tab" data-tab="network">Network</button>
-      <button class="tab" data-tab="services">Services</button>
-      <button class="tab" data-tab="names">Names</button>
-      <button class="tab" data-tab="settings">Settings</button>
+    <nav class="tabs" aria-label="Разделы панели">
+      <button class="tab active" data-tab="overview">Обзор</button>
+      <button class="tab" data-tab="network">Сеть</button>
+      <button class="tab" data-tab="services">Сервисы</button>
+      <button class="tab" data-tab="names">Имена</button>
+      <button class="tab" data-tab="settings">Настройки</button>
     </nav>
 
     <main>
       <div class="tab-page active" data-page="overview">
         <section class="hero panel">
           <div class="identity-block">
-            <span class="eyebrow">CANONICAL .KNOT ADDRESS</span>
-            <div class="identity-row"><code id="domain">—</code><button class="copy" data-copy="domain">Copy</button></div>
-            <div class="secondary-id"><span>Node ID</span><code id="nodeId">—</code><button class="copy mini" data-copy="nodeId">Copy</button></div><div class="secondary-id"><span>Network</span><code id="networkId">—</code><button class="copy mini" data-copy="networkId">Copy</button></div>
-            <p id="listen">Starting…</p>
+            <span class="eyebrow">КАНОНИЧЕСКИЙ .KNOT-АДРЕС</span>
+            <div class="identity-row"><code id="domain">—</code><button class="copy" data-copy="domain">Копировать</button></div>
+            <div class="secondary-id"><span>ID узла</span><code id="nodeId">—</code><button class="copy mini" data-copy="nodeId">Копировать</button></div><div class="secondary-id"><span>Сеть</span><code id="networkId">—</code><button class="copy mini" data-copy="networkId">Копировать</button></div>
+            <p id="listen">Запуск…</p>
           </div>
           <div class="hero-stats">
-            <div><strong id="peerCount">0</strong><span>direct peers</span></div>
-            <div><strong id="routeCount">0</strong><span>reachable nodes</span></div>
-            <div><strong id="streamCount">0</strong><span>streams / circuits</span></div>
+            <div><strong id="peerCount">0</strong><span>прямых пиров</span></div>
+            <div><strong id="routeCount">0</strong><span>доступных узлов</span></div>
+            <div><strong id="streamCount">0</strong><span>потоков / circuits</span></div>
           </div>
         </section>
 
         <section class="metric-grid">
-          <article class="panel metric"><span>Transferred</span><strong id="traffic">0 B</strong><small id="frames">0 frames</small></article>
-          <article class="panel metric"><span>Uptime</span><strong id="uptime">0s</strong><small id="version">—</small></article>
-          <article class="panel metric"><span>Published</span><strong id="serviceCount">0</strong><small id="descriptorCount">service identities · 0 descriptors</small></article>
-          <article class="panel metric"><span>Local gateways</span><strong id="gatewayCount">0</strong><small>SOCKS5 and HTTP</small></article>
+          <article class="panel metric"><span>Передано</span><strong id="traffic">0 B</strong><small id="frames">0 кадров</small></article>
+          <article class="panel metric"><span>Аптайм</span><strong id="uptime">0s</strong><small id="version">—</small></article>
+          <article class="panel metric"><span>Опубликовано</span><strong id="serviceCount">0</strong><small id="descriptorCount">идентичностей сервисов · 0 дескрипторов</small></article>
+          <article class="panel metric"><span>Локальные шлюзы</span><strong id="gatewayCount">0</strong><small>SOCKS5 и HTTP</small></article>
         </section>
 
         <section class="access-grid">
-          <article class="panel access-card"><span class="eyebrow">SOCKS5</span><code id="socksAddress">disabled</code><p>Use remote DNS / hostname mode. Ordinary hosts can go direct.</p></article>
-          <article class="panel access-card"><span class="eyebrow">HTTP / CONNECT</span><code id="httpAddress">disabled</code><p>Suitable for browsers and system PAC integration.</p></article>
-          <article class="panel access-card"><span class="eyebrow">PAC SCRIPT</span><code id="pacAddress">disabled</code><p>Only <code>*.knot</code> is proxied. Everything else remains DIRECT.</p></article>
+          <article class="panel access-card"><span class="eyebrow">SOCKS5</span><code id="socksAddress">выключено</code><p>Используйте удалённое разрешение имён через SOCKS. Обычные хосты могут идти напрямую.</p></article>
+          <article class="panel access-card"><span class="eyebrow">HTTP / CONNECT</span><code id="httpAddress">выключено</code><p>Для браузеров и системной PAC-интеграции.</p></article>
+          <article class="panel access-card"><span class="eyebrow">PAC SCRIPT</span><code id="pacAddress">выключено</code><p>Через proxy идут только <code>*.knot</code>. Остальное остаётся DIRECT.</p></article>
         </section>
 
         <section class="two-col">
-          <article class="panel"><div class="section-title"><div><span class="eyebrow">TOPOLOGY</span><h2>Routes</h2></div><span class="badge" id="topologyBadge">0 nodes</span></div><div id="routes" class="table-wrap empty">No routes yet</div></article>
-          <article class="panel"><div class="section-title"><div><span class="eyebrow">LINKS</span><h2>Peers</h2></div></div><div id="peers" class="cards empty">No peers connected</div></article>
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">ТОПОЛОГИЯ</span><h2>Маршруты</h2></div><span class="badge" id="topologyBadge">0 узлов</span></div><div id="routes" class="table-wrap empty">Маршрутов пока нет</div></article>
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">СОЕДИНЕНИЯ</span><h2>Пиры</h2></div></div><div id="peers" class="cards empty">Нет подключённых пиров</div></article>
         </section>
 
         <section class="two-col lower">
-          <article class="panel"><div class="section-title"><div><span class="eyebrow">ENDPOINTS</span><h2>Services & forwards</h2></div></div><div id="endpoints" class="cards empty">Nothing configured</div></article>
-          <article class="panel"><div class="section-title"><div><span class="eyebrow">RUNTIME</span><h2>Event log</h2></div></div><div id="events" class="events empty">No events</div></article>
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">ТОЧКИ ДОСТУПА</span><h2>Сервисы и пробросы</h2></div></div><div id="endpoints" class="cards empty">Ничего не настроено</div></article>
+          <article class="panel"><div class="section-title"><div><span class="eyebrow">РАБОТА УЗЛА</span><h2>Журнал событий</h2></div></div><div id="events" class="events empty">Событий пока нет</div></article>
         </section>
       </div>
 
       <div class="tab-page" data-page="network">
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">STATIC SEEDS</span><h2>Peers</h2><p>Optional fixed peers. Discovery can bootstrap through Beacons, LAN and peer exchange.</p></div><button class="button" id="addPeer">Add peer</button></div>
+          <div class="section-title"><div><span class="eyebrow">СТАТИЧЕСКИЕ SEED-УЗЛЫ</span><h2>Пиры</h2><p>Необязательные фиксированные пиры. Обычно bootstrap выполняется через Beacon, LAN или peer exchange.</p></div><button class="button" id="addPeer">Добавить пир</button></div>
           <div id="peerEditor" class="editor-list"></div>
         </section>
 
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">DISCOVERY</span><h2>Automatic peering</h2><p>Use multiple independent discovery channels. Beacon servers only exchange signed peer candidates.</p></div></div>
+          <div class="section-title"><div><span class="eyebrow">ОБНАРУЖЕНИЕ</span><h2>Автоматическое подключение</h2><p>Можно использовать несколько независимых каналов discovery. Beacon обменивается только подписанными кандидатами пиров.</p></div></div>
           <div class="form-grid two">
             <label><span>Network ID</span><input id="networkIdInput" placeholder="kn_…" /></label>
-            <label><span>Discovery interval</span><input id="discoveryInterval" placeholder="30s" /></label>
-            <label><span>Beacon URLs</span><textarea id="beaconInput" rows="4" placeholder="https://beacon.example"></textarea></label>
-            <div>
-              <label class="switch-row"><input type="checkbox" id="discoveryEnabled" /><span><strong>Automatic discovery</strong><small>Enable dynamic candidate discovery.</small></span></label>
-              <label class="switch-row"><input type="checkbox" id="discoveryLan" /><span><strong>LAN multicast</strong><small>Discover nodes on the local network.</small></span></label>
-              <label class="switch-row"><input type="checkbox" id="discoveryPex" /><span><strong>Peer exchange</strong><small>Learn candidates from connected peers.</small></span></label>
-            </div>
+            <label><span>Beacon HTTP(S) URL</span><textarea id="beaconInput" rows="3" placeholder="https://beacon.example"></textarea><small>Указывайте HTTP API Beacon. Порт 7447 — relay transport и сюда не подходит.</small></label>
           </div>
+          <details class="advanced-section"><summary>Дополнительные параметры discovery</summary><div class="form-grid two">
+            <label><span>Интервал discovery</span><input id="discoveryInterval" placeholder="30s" /></label>
+            <div>
+              <label class="switch-row"><input type="checkbox" id="discoveryEnabled" /><span><strong>Автоматический discovery</strong><small>Искать кандидатов автоматически.</small></span></label>
+              <label class="switch-row"><input type="checkbox" id="discoveryLan" /><span><strong>LAN multicast</strong><small>Искать узлы в локальной сети.</small></span></label>
+              <label class="switch-row"><input type="checkbox" id="discoveryPex" /><span><strong>Обмен пирами</strong><small>Получать кандидатов от подключённых пиров.</small></span></label>
+            </div>
+          </div></details>
         </section>
-        <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">LOCAL LISTENERS</span><h2>Transport</h2></div></div>
-          <div class="form-grid two"><label><span>Listen addresses</span><textarea id="listenInput" rows="4" placeholder="0.0.0.0:7447"></textarea></label><label><span>Advertised addresses</span><textarea id="advertiseInput" rows="4" placeholder="public.example:7447"></textarea></label></div>
-        </section>
+        <details class="panel editor-panel advanced-section"><summary><span class="eyebrow">ЛОКАЛЬНЫЙ ТРАНСПОРТ</span><strong>Дополнительные параметры транспорта</strong></summary>
+          <div class="form-grid two"><label><span>Адреса прослушивания</span><textarea id="listenInput" rows="3" placeholder="0.0.0.0:7447"></textarea></label><label><span>Публично объявляемые адреса</span><textarea id="advertiseInput" rows="3" placeholder="public.example:7447"></textarea></label></div>
+        </details>
       </div>
 
       <div class="tab-page" data-page="services">
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">PUBLISH</span><h2>Service identities</h2><p>A published service receives its own portable self-authenticating <code>…​.knot</code> identity and is reached through introduction points + rendezvous circuits.</p></div><button class="button" id="addService">Add service</button></div>
+          <div class="section-title"><div><span class="eyebrow">ПУБЛИКАЦИЯ</span><h2>Идентичности сервисов</h2><p>Опубликованный сервис получает собственный переносимый криптографический <code>…​.knot</code>-адрес и доступен через точки входа и rendezvous-circuits.</p></div><button class="button" id="addService">Добавить сервис</button></div>
           <div id="serviceEditor" class="editor-list"></div>
         </section>
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">LOCAL PORTS</span><h2>Static forwards</h2></div><button class="button" id="addForward">Add forward</button></div>
+          <div class="section-title"><div><span class="eyebrow">ЛОКАЛЬНЫЕ ПОРТЫ</span><h2>Статические пробросы</h2></div><button class="button" id="addForward">Добавить проброс</button></div>
           <div id="forwardEditor" class="editor-list"></div>
         </section>
       </div>
 
       <div class="tab-page" data-page="names">
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">ADDRESS BOOK</span><h2>Local aliases</h2><p>An alias can point either to a node identity or directly to a portable service identity.</p></div><button class="button" id="addAlias">Add alias</button></div>
+          <div class="section-title"><div><span class="eyebrow">АДРЕСНАЯ КНИГА</span><h2>Локальные алиасы</h2><p>Алиас может указывать на узел или напрямую на переносимую identity сервиса.</p></div><button class="button" id="addAlias">Добавить алиас</button></div>
           <div id="aliasEditor" class="editor-list"></div>
-          <div class="notice">Aliases are deliberately local. For portable proof-of-ownership records use <code>knotroute alias export</code> and <code>knotroute alias import</code>.</div>
+          <div class="notice">Алиасы намеренно локальные. Для переносимых подписанных записей используйте <code>knotroute alias export</code> и <code>knotroute alias import</code>.</div>
         </section>
       </div>
 
       <div class="tab-page" data-page="settings">
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">LOCAL ACCESS</span><h2>Gateways</h2><p>No TUN is created. This can coexist with a separate VPN/TUN application.</p></div></div>
+          <div class="section-title"><div><span class="eyebrow">ЛОКАЛЬНЫЙ ДОСТУП</span><h2>Шлюзы</h2><p>KnotRoute не создаёт TUN и может работать одновременно с отдельным VPN/TUN-приложением.</p></div></div>
           <div class="form-grid two">
-            <label><span>SOCKS5 listener</span><input id="proxySocks" placeholder="127.0.0.1:9477" /></label>
-            <label><span>HTTP proxy listener</span><input id="proxyHttp" placeholder="127.0.0.1:9478" /></label>
-            <label><span>Default HTTP service</span><input id="defaultHttp" placeholder="http" /></label>
-            <label><span>Default HTTPS service</span><input id="defaultHttps" placeholder="https" /></label>
+            <label><span>SOCKS5-адрес</span><input id="proxySocks" placeholder="127.0.0.1:9477" /></label>
+            <label><span>HTTP proxy-адрес</span><input id="proxyHttp" placeholder="127.0.0.1:9478" /></label>
+            <label><span>HTTP-сервис по умолчанию</span><input id="defaultHttp" placeholder="http" /></label>
+            <label><span>HTTPS-сервис по умолчанию</span><input id="defaultHttps" placeholder="https" /></label>
           </div>
-          <label class="switch-row"><input type="checkbox" id="proxyDirect" /><span><strong>Allow direct fallback</strong><small>Non-.knot hosts are connected through the operating system normally.</small></span></label>
+          <label class="switch-row"><input type="checkbox" id="proxyDirect" /><span><strong>Разрешить прямой fallback</strong><small>Не-.knot адреса подключаются обычным сетевым стеком ОС.</small></span></label>
         </section>
 
-        <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">PRIVACY</span><h2>Circuits & directory</h2><p>Fresh onion circuits are built per connection; service descriptors are replicated across the distributed directory.</p></div></div>
+        <details class="panel editor-panel advanced-section"><summary><span class="eyebrow">ПРИВАТНОСТЬ</span><strong>Circuits и directory</strong></summary>
+          <div class="section-title details-title"><div><h2>Параметры circuits и directory</h2><p>Для соединений строятся onion circuits; дескрипторы сервисов реплицируются в распределённом directory.</p></div></div>
           <div class="form-grid two">
-            <label><span>Circuit hops</span><input id="circuitHops" type="number" min="1" max="8" /></label>
-            <label><span>Circuit timeout</span><input id="circuitTimeout" placeholder="15s" /></label>
-            <label><span>Directory replicas</span><input id="directoryReplicas" type="number" min="1" max="16" /></label>
-            <label><span>Descriptor lifetime</span><input id="descriptorTtl" placeholder="10m" /></label>
-            <label><span>Publish interval</span><input id="descriptorPublish" placeholder="2m" /></label>
-            <label><span>Lookup timeout</span><input id="descriptorLookup" placeholder="8s" /></label>
+            <label><span>Хопов в circuit</span><input id="circuitHops" type="number" min="1" max="8" /></label>
+            <label><span>Таймаут circuit</span><input id="circuitTimeout" placeholder="15s" /></label>
+            <label><span>Реплик directory</span><input id="directoryReplicas" type="number" min="1" max="16" /></label>
+            <label><span>Время жизни descriptor</span><input id="descriptorTtl" placeholder="10m" /></label>
+            <label><span>Интервал публикации</span><input id="descriptorPublish" placeholder="2m" /></label>
+            <label><span>Таймаут поиска</span><input id="descriptorLookup" placeholder="8s" /></label>
           </div>
-        </section>
+        </details>
         <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">HTTPS</span><h2>Local .knot CA</h2><p>The root private key never leaves this device. Certificates are issued only for <code>.knot</code> names.</p></div></div>
-          <div class="form-grid two"><label><span>CA directory</span><input id="caDirectory" placeholder="ca" /></label></div>
-          <label class="switch-row"><input type="checkbox" id="caEnabled" /><span><strong>Enable local CA</strong><small>Required for browser-trusted HTTPS integration.</small></span></label>
-          <label class="switch-row"><input type="checkbox" id="caIntercept" /><span><strong>Terminate .knot HTTPS locally</strong><small>The plaintext side exists only between the local proxy and the already E2E-encrypted service stream.</small></span></label>
+          <div class="section-title"><div><span class="eyebrow">HTTPS</span><h2>Локальный .knot CA</h2><p>Приватный ключ root CA не покидает устройство. Сертификаты выпускаются только для имён <code>.knot</code>.</p></div></div>
+          <div class="form-grid two"><label><span>Каталог CA</span><input id="caDirectory" placeholder="ca" /></label></div>
+          <label class="switch-row"><input type="checkbox" id="caEnabled" /><span><strong>Включить локальный CA</strong><small>Нужно для доверенного HTTPS в браузере.</small></span></label>
+          <label class="switch-row"><input type="checkbox" id="caIntercept" /><span><strong>Завершать .knot HTTPS локально</strong><small>Открытый HTTP существует только локально между proxy и уже E2E-зашифрованным service stream.</small></span></label>
         </section>
-        <section class="panel editor-panel">
-          <div class="section-title"><div><span class="eyebrow">CONTROL PLANE</span><h2>Dashboard & routing</h2></div></div>
+        <details class="panel editor-panel advanced-section"><summary><span class="eyebrow">УПРАВЛЕНИЕ</span><strong>Дополнительные параметры маршрутизации</strong></summary>
           <div class="form-grid two">
-            <label><span>Dashboard listener</span><input id="dashboardInput" placeholder="127.0.0.1:8484" /></label>
-            <label><span>Maximum hops</span><input id="maxHops" type="number" min="2" max="64" /></label>
-            <label><span>LSA interval</span><input id="lsaInterval" placeholder="20s" /></label>
-            <label><span>LSA lifetime</span><input id="lsaTtl" placeholder="90s" /></label>
+            <label><span>Listener панели</span><input id="dashboardInput" placeholder="127.0.0.1:8484" /></label>
+            <label><span>Максимум hops</span><input id="maxHops" type="number" min="2" max="64" /></label>
+            <label><span>Интервал LSA</span><input id="lsaInterval" placeholder="20s" /></label>
+            <label><span>Время жизни LSA</span><input id="lsaTtl" placeholder="90s" /></label>
           </div>
-        </section>
+        </details>
       </div>
 
       <section class="savebar panel">
-        <div><strong id="saveState">Configuration loaded</strong><span>Changes are validated and applied by restarting the node in-process.</span></div>
-        <button class="button primary" id="saveConfig">Save & restart</button>
+        <div><strong id="saveState">Конфигурация загружена</strong><span>Изменения валидируются и применяются перезапуском узла.</span></div>
+        <button class="button primary" id="saveConfig">Сохранить и перезапустить</button>
       </section>
     </main>
   </div>

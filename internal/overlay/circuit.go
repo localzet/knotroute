@@ -375,8 +375,7 @@ func (n *Node) openCircuitTarget(rc *relayCircuit, body []byte) {
 			_ = n.sendRelayReverse(rc, protocol.RelayOpenError, []byte("service unavailable for anonymous circuit"))
 			return
 		}
-		d := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
-		c, err := d.DialContext(n.ctx, "tcp", svc.Target)
+		c, err := n.dialServiceTarget(n.ctx, svc.Target)
 		if err != nil {
 			_ = n.sendRelayReverse(rc, protocol.RelayOpenError, []byte(err.Error()))
 			return
@@ -691,7 +690,7 @@ func (n *Node) OpenCircuitStream(ctx context.Context, dst nodeid.ID, service str
 		if c, ok := n.internalService(service, n.id.ID); ok {
 			return c, nil
 		}
-		return nil, errors.New("local circuit target is not an internal service")
+		return n.openLocalNamedService(ctx, service)
 	}
 	path, err := n.circuitPathTo(dst)
 	if err != nil {

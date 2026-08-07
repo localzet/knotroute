@@ -47,17 +47,22 @@ func (s *Store) View(fn func(State)) {
 func (s *Store) Update(fn func(*State) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := fn(&s.data); err != nil {
+	next := cloneState(s.data)
+	if err := fn(&next); err != nil {
 		return err
 	}
-	return s.saveLocked()
+	if err := s.saveStateLocked(next); err != nil {
+		return err
+	}
+	s.data = next
+	return nil
 }
 
-func (s *Store) saveLocked() error {
+func (s *Store) saveStateLocked(data State) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil && filepath.Dir(s.path) != "." {
 		return err
 	}
-	raw, err := json.MarshalIndent(s.data, "", "  ")
+	raw, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}

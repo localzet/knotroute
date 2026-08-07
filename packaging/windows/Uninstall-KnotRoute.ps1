@@ -3,6 +3,8 @@ param(
   [switch]$RemoveIdentity
 )
 $ErrorActionPreference = "Stop"
+$IsRu = [Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq "ru"
+function T([string]$En, [string]$Ru) { if ($IsRu) { $Ru } else { $En } }
 $DataDir = Join-Path $env:LOCALAPPDATA "KnotRoute"
 # Stop the tray first so installed binaries are not locked. The daemon is asked
 # to shut down gracefully through its local management API below.
@@ -34,4 +36,4 @@ Remove-Item (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\KnotR
 Remove-Item (Join-Path ([Environment]::GetFolderPath("Desktop")) "KnotRoute.lnk") -Force -ErrorAction SilentlyContinue
 Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 if ($RemoveIdentity) { Remove-Item $DataDir -Recurse -Force -ErrorAction SilentlyContinue }
-Write-Host "KnotRoute removed. Identity and configuration were preserved unless -RemoveIdentity was specified."
+Write-Host (T "KnotRoute removed. Identity and configuration were preserved unless -RemoveIdentity was specified." "KnotRoute удалён. Идентичность и конфигурация сохранены, если не был указан -RemoveIdentity.")

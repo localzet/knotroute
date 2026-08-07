@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">KnotRoute</string>
+    <string name="client_subtitle">КЛИЕНТ СЕТИ</string>
     <string name="channel_name">Сеть KnotRoute</string>
     <string name="notification_running">Зашифрованная overlay-сеть подключена</string>
     <string name="home">Главная</string><string name="browser">Браузер</string><string name="network">Сеть</string><string name="diagnostics">Диагностика</string>
@@ -13,4 +14,11 @@
     <string name="profile_imported">Профиль сети импортирован</string><string name="invalid_profile">Некорректный профиль подключения KnotRoute</string><string name="copy">Копировать</string><string name="copied">Скопировано</string>
     <string name="last_error">Последняя ошибка</string><string name="webview_proxy_unsupported">Этот WebView не поддерживает локальное переопределение proxy</string>
     <string name="no_error">Ошибок нет</string><string name="about_network">Профиль сети содержит только параметры подключения. Приватные ключи никогда не передаются через QR.</string>
+    <string name="notification_starting">Запуск KnotRoute…</string>
+    <string name="notification_failed">KnotRoute не запущен: %1$s</string>
+    <string name="advanced_settings">Дополнительные настройки</string>
+    <string name="invalid_network_id">Некорректный Network ID. Ожидается адрес kn_…</string>
+    <string name="invalid_beacon_url">Некорректный Beacon URL. Укажите HTTP(S) URL Beacon API.</string>
+    <string name="beacon_relay_port_error">Порт 7447 — relay transport, а не Beacon HTTP API. Используйте HTTPS URL Beacon или HTTP-порт 8080.</string>
+    <string name="beacon_root_error">Укажите корневой URL Beacon без /v1/peers и других путей.</string>
 </resources>

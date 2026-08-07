@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var address: EditText
     private val mainExecutor = Executor { runOnUiThread(it) }
     private var currentPage = "home"
+    private var waitGeneration = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,7 +41,8 @@ class MainActivity : Activity() {
         handleJoinIntent(intent)
         startForegroundService(Intent(this, KnotService::class.java))
         buildUi()
-        waitForCore(0)
+        waitGeneration++
+        waitForCore(0, waitGeneration, null)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -74,12 +76,45 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(12, 14, 18))
         }
-        root.addView(buildHeader())
+        val header = buildHeader()
+        val bottomNav = buildBottomNav()
+        root.addView(header)
         content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        root.addView(buildBottomNav())
+        root.addView(bottomNav)
         setContentView(root)
+        applySystemInsets(header, bottomNav)
         showPage("home")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applySystemInsets(header: View, bottomNav: View) {
+        if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false)
+        val headerLeft = header.paddingLeft
+        val headerTop = header.paddingTop
+        val headerRight = header.paddingRight
+        val headerBottom = header.paddingBottom
+        val navLeft = bottomNav.paddingLeft
+        val navTop = bottomNav.paddingTop
+        val navRight = bottomNav.paddingRight
+        val navBottom = bottomNav.paddingBottom
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val left: Int
+            val top: Int
+            val right: Int
+            val bottom: Int
+            if (Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                left = bars.left; top = bars.top; right = bars.right; bottom = bars.bottom
+            } else {
+                left = insets.systemWindowInsetLeft; top = insets.systemWindowInsetTop
+                right = insets.systemWindowInsetRight; bottom = insets.systemWindowInsetBottom
+            }
+            header.setPadding(headerLeft + left, headerTop + top, headerRight + right, headerBottom)
+            bottomNav.setPadding(navLeft + left, navTop, navRight + right, navBottom + bottom)
+            insets
+        }
+        root.requestApplyInsets()
     }
 
     private fun buildHeader(): View {
@@ -96,7 +131,7 @@ class MainActivity : Activity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         titleBox.addView(TextView(this).apply {
-            text = "OVERLAY CLIENT"
+            text = getString(R.string.client_subtitle)
             setTextColor(Color.rgb(128, 143, 160))
             textSize = 9f
             letterSpacing = .18f
@@ -210,10 +245,30 @@ class MainActivity : Activity() {
         box.addView(label(getString(R.string.profile_name))); box.addView(name)
         box.addView(label(getString(R.string.network_id))); box.addView(network)
         box.addView(label(getString(R.string.beacon_urls))); box.addView(beacons)
-        box.addView(label(getString(R.string.circuit_hops))); box.addView(hops)
+        val advanced = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            addView(label(getString(R.string.circuit_hops)))
+            addView(hops)
+        }
+        box.addView(actionButton(getString(R.string.advanced_settings), secondary = true) {
+            advanced.visibility = if (advanced.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        })
+        box.addView(advanced)
         box.addView(TextView(this@MainActivity).apply { text=getString(R.string.about_network); setTextColor(Color.rgb(142,151,165)); setPadding(0,dp(14),0,dp(8)) })
         box.addView(actionButton(getString(R.string.save_restart)) {
-            val updated = NetworkProfile(name.text.toString().trim().ifBlank { getString(R.string.default_profile) }, network.text.toString().trim(), beacons.text.toString().lines().map { it.trim() }.filter { it.startsWith("https://") }, hops.text.toString().toIntOrNull()?.coerceIn(1,8) ?: 3)
+            val networkId = network.text.toString().trim()
+            if (networkId.isNotEmpty() && !networkId.startsWith("kn_")) {
+                Toast.makeText(this@MainActivity, getString(R.string.invalid_network_id), Toast.LENGTH_LONG).show()
+                return@actionButton
+            }
+            val beaconList = beacons.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() }
+            val invalidBeacon = beaconList.firstOrNull { validateBeaconUrl(it) != null }
+            if (invalidBeacon != null) {
+                Toast.makeText(this@MainActivity, validateBeaconUrl(invalidBeacon), Toast.LENGTH_LONG).show()
+                return@actionButton
+            }
+            val updated = NetworkProfile(name.text.toString().trim().ifBlank { getString(R.string.default_profile) }, networkId, beaconList, hops.text.toString().toIntOrNull()?.coerceIn(1,8) ?: 3)
             profiles[selected] = updated
             NetworkProfiles.save(this@MainActivity, profiles, selected)
             restartCore()
@@ -246,20 +301,29 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun waitForCore(attempt: Int) {
-        if (KnotRuntime.ready()) {
+    private fun waitForCore(attempt: Int, generation: Int, afterRuntimeGeneration: Long?) {
+        if (generation != waitGeneration || isFinishing) return
+        val runtimeIsFresh = afterRuntimeGeneration == null || KnotRuntime.generation() > afterRuntimeGeneration
+        if (KnotRuntime.ready() && runtimeIsFresh) {
             statusDot.setTextColor(Color.rgb(140,255,193)); statusText.text = getString(R.string.connected)
+            configureProxy()
             if (currentPage == "home" || currentPage == "diagnostics") showPage(currentPage)
             return
         }
-        if (attempt > 120) { statusDot.setTextColor(Color.rgb(255,112,126)); statusText.text = getString(R.string.failed); return }
-        Handler(Looper.getMainLooper()).postDelayed({ waitForCore(attempt + 1) }, 150)
+        if (attempt > 200) {
+            statusDot.setTextColor(Color.rgb(255,112,126)); statusText.text = getString(R.string.failed)
+            KnotRuntime.lastError?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+            return
+        }
+        Handler(Looper.getMainLooper()).postDelayed({ waitForCore(attempt + 1, generation, afterRuntimeGeneration) }, 200)
     }
 
     private fun restartCore() {
         statusDot.setTextColor(Color.rgb(255,201,112)); statusText.text = getString(R.string.starting)
-        stopService(Intent(this, KnotService::class.java))
-        Handler(Looper.getMainLooper()).postDelayed({ startForegroundService(Intent(this, KnotService::class.java)); waitForCore(0) }, 500)
+        val previousRuntimeGeneration = KnotRuntime.generation()
+        waitGeneration++
+        startForegroundService(Intent(this, KnotService::class.java).setAction(KnotService.ACTION_RESTART))
+        waitForCore(0, waitGeneration, previousRuntimeGeneration)
     }
 
     private fun configureProxy() {
@@ -269,6 +333,16 @@ class MainActivity : Activity() {
         }
         val endpoint = KnotRuntime.proxyUrl().removePrefix("http://")
         ProxyController.getInstance().setProxyOverride(ProxyConfig.Builder().addProxyRule(endpoint).build(), mainExecutor) {}
+    }
+
+    private fun validateBeaconUrl(raw: String): String? {
+        return try {
+            val uri = Uri.parse(raw)
+            if ((uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank()) getString(R.string.invalid_beacon_url)
+            else if (uri.port == 7447) getString(R.string.beacon_relay_port_error)
+            else if (!uri.path.isNullOrBlank() && uri.path != "/") getString(R.string.beacon_root_error)
+            else null
+        } catch (_: Throwable) { getString(R.string.invalid_beacon_url) }
     }
 
     private fun navigate() {
@@ -285,9 +359,10 @@ class MainActivity : Activity() {
         } catch (e: Exception) { Toast.makeText(this, e.message ?: getString(R.string.ca_failed), Toast.LENGTH_LONG).show() }
     }
 
-    private fun actionButton(text: String, danger: Boolean = false, action: () -> Unit): Button = Button(this).apply {
-        this.text = text; isAllCaps = false; textSize = 15f; setTextColor(if (danger) Color.rgb(255,125,137) else Color.rgb(8,17,13));
-        background = solid(if (danger) Color.rgb(51,28,34) else Color.rgb(140,255,193), 12f)
+    private fun actionButton(text: String, danger: Boolean = false, secondary: Boolean = false, action: () -> Unit): Button = Button(this).apply {
+        this.text = text; isAllCaps = false; textSize = 15f
+        setTextColor(if (danger) Color.rgb(255,125,137) else if (secondary) Color.WHITE else Color.rgb(8,17,13))
+        background = solid(if (danger) Color.rgb(51,28,34) else if (secondary) Color.rgb(31,36,45) else Color.rgb(140,255,193), 12f)
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(10) }
     }

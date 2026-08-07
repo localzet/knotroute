@@ -2,7 +2,7 @@ package ops
 
 import "time"
 
-const Version = "3.1.0"
+var Version = "dev"
 
 type Network struct {
 	ID          string    `json:"id"`

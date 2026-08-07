@@ -434,8 +434,7 @@ func (n *Node) acceptIntroduction(s *publishedService, req introduceRequest) {
 		return
 	}
 	secure := newRendezvousConn(conn, s.identity.ID, cookie, s2c, c2s)
-	dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
-	target, err := dialer.DialContext(n.ctx, "tcp", s.cfg.Target)
+	target, err := n.dialServiceTarget(n.ctx, s.cfg.Target)
 	if err != nil {
 		_ = secure.Close()
 		return
@@ -461,6 +460,9 @@ func (n *Node) openInternalEndpoint(ctx context.Context, dst nodeid.ID, name str
 }
 
 func (n *Node) OpenService(ctx context.Context, id serviceid.ID) (net.Conn, error) {
+	if service, ok := n.localPublishedService(id); ok {
+		return n.dialLocalService(ctx, service)
+	}
 	d, err := n.LookupService(ctx, id)
 	if err != nil {
 		return nil, err

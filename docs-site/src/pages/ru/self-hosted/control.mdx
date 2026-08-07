@@ -65,3 +65,87 @@ Control публикуйте только по HTTPS. Не выставляйт�
 ## Backup
 
 Бэкапьте `/data` Control вместе с deployment config. Потеря Control data не должна уничтожить service identities, но приведёт к потере inventory/enrollment state и усложнит управление.
+
+## Existing Beacon и managed Beacon — разные вещи
+
+Control хранит **network profile** и может знать о Beacon, который вы подняли вручную. Для этого Agent не нужен.
+
+```text
+Сети
+└─ Production
+   ├─ Network ID: kn_...
+   └─ Beacon: https://beacon.example.net   ← внешний
+```
+
+Такой Beacon отображается как внешний/неуправляемый. Кнопка проверки обращается к его `/healthz`.
+
+Managed Beacon — другой сценарий: Control создаёт job `deploy_beacon`, Agent получает её и генерирует Docker Compose на выбранном host. Не используйте этот сценарий для уже существующего Beacon.
+
+## Почему network profile можно сохранить без Beacon
+
+`Network ID` описывает overlay namespace, а Beacon — лишь один из discovery channels. Поэтому Control позволяет сохранить профиль без Beacon. Но мастер публикации managed-sidecar потребует рабочий Beacon URL, потому что текущий deployment template sidecar не передаёт static peer list.
+
+Если Beacon уже существует, добавьте его HTTP(S) URL в network profile. Если ваша конкретная сеть использует только static peers/другой bootstrap, sidecar лучше пока разворачивать вручную с соответствующей конфигурацией.
+
+## Agent lifecycle
+
+Первое подключение:
+
+```text
+Agent -> POST /api/v1/agents/enroll
+        enrollment token + Ed25519 public key
+```
+
+После enrollment Agent сохраняет identity в `/data/agent-identity.json`. Последующие heartbeat/job requests подписываются приватным ключом Agent.
+
+Удаление persistent Agent volume создаст новую identity и потребует повторного enrollment. Поэтому `/data` Agent также является persistent state.
+
+## Что происходит при публикации sidecar
+
+Control не подключается к Docker socket. Он создаёт job:
+
+```text
+deploy_sidecar
+├─ network_id
+├─ Beacon URLs
+├─ service name
+├─ target container:port
+├─ Docker network
+└─ optional advertise
+```
+
+Agent получает job, генерирует Compose в своём `/data/stacks`, запускает `docker compose up -d --pull always` и затем сообщает состояние через heartbeat.
+
+Managed sidecar запускается с `KNOTROUTE_CONFIG_FROM_ENV=true`: runtime config пересобирается из текущих deployment parameters при старте. Persistent service identity остаётся в `/data`, поэтому изменение Beacon/target не должно менять canonical `.knot` address.
+
+## Как читать ошибки Control
+
+Ошибки разделяйте по месту возникновения:
+
+| Где показана ошибка | Что это обычно означает |
+| --- | --- |
+| прямо в модальном окне | validation/API request не принят Control |
+| раздел «Задачи», status `failed` | job дошла до Agent, но Agent/Docker operation завершилась ошибкой |
+| Agent offline | Control давно не получал подписанный heartbeat |
+| Beacon health-check failed | HTTP API недоступен/неверный URL/TLS/reverse proxy |
+| service остаётся без `.knot` | sidecar не стартовал, target/config ошибочен или identity ещё не обнаружена Agent'ом |
+
+Если вводите `http://host:7447` как Beacon, Control теперь отклоняет его до сохранения: `7447` — relay transport, а не Beacon HTTP API.
+
+## Обновление Control и Agent
+
+Обновляйте их одним release channel. Agent по умолчанию разворачивает Beacon/sidecar image с тем же tag/channel, который зашит в его build (`edge`, release version и т. д.). Это исключает ситуацию, когда Agent версии `3.x` пытается скачать несуществующий hardcoded image tag.
+
+Перед upgrade Control сохраните `/data`. Перед upgrade Agent сохраните его `/data` и `/data/stacks`.
+
+## Ограничения текущего Control
+
+Текущий Control — single-admin management plane. В нём пока нет полноценного RBAC/OIDC и распределённого HA state. Поэтому:
+
+- публикуйте его только за HTTPS;
+- ограничьте административный доступ на уровне reverse proxy/firewall, если возможно;
+- используйте длинный отдельный admin password;
+- enrollment token храните отдельно от admin password;
+- не монтируйте Docker socket в Control.
+
+Для диагностики Control → Agent → Beacon → sidecar используйте [единый runbook](/ru/self-hosted/diagnostics).

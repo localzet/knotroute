@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/localzet/knotroute/internal/overlay"
 	"github.com/localzet/knotroute/pkg/knotclient"
 )
 
@@ -131,7 +132,7 @@ func (c *Client) bridge(local net.Conn, address string) {
 	<-done
 }
 
-func Version() string { return "3.0.0" }
+func Version() string { return overlay.Version }
 func ValidateOptions(optionsJSON string) error {
 	var opts options
 	if err := json.Unmarshal([]byte(optionsJSON), &opts); err != nil {

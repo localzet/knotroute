@@ -298,7 +298,7 @@ class MainActivity : Activity() {
         if (detail.isNotBlank()) addView(TextView(this@MainActivity).apply { text=detail; setTextColor(Color.rgb(150,160,174)); setPadding(0,dp(5),0,0) })
         layoutParams=LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT).apply{bottomMargin=dp(10)}
     }
-    private fun label(text:String)=TextView(this).apply{text=text;setTextColor(Color.rgb(150,160,174));setPadding(0,dp(14),0,dp(6));textSize=12f}
+    private fun label(labelText:String)=TextView(this).apply{this.text=labelText;setTextColor(Color.rgb(150,160,174));setPadding(0,dp(14),0,dp(6));textSize=12f}
     private fun field(hint:String,multiline:Boolean=false)=EditText(this).apply{this.hint=hint;setTextColor(Color.WHITE);setHintTextColor(Color.rgb(103,113,126));background=solid(Color.rgb(22,26,33),10f);setPadding(dp(12),dp(10),dp(12),dp(10));if(!multiline)setSingleLine()else{minLines=3;gravity=Gravity.TOP}}
     private fun solid(color:Int,radius:Float)=GradientDrawable().apply{setColor(color);cornerRadius=dp(radius.toInt()).toFloat()}
     private fun dp(value:Int)=(value*resources.displayMetrics.density).toInt()

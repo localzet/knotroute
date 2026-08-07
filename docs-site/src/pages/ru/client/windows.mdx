@@ -1,0 +1,21 @@
+# Windows-клиент
+
+## 1. Установите KnotRoute
+
+Скачайте Windows x64/ARM64 archive из GitHub Releases и запустите `Install-KnotRoute.ps1`. Для обычной работы запускайте `knotroute-desktop.exe`.
+
+## 2. Добавьте сеть
+
+Проще всего получить параметры из KnotRoute Control: `network_id` и 2+ Beacon URL. CLI также поддерживает `.knotinvite`.
+
+## 3. Включите `.knot integration`
+
+Tray установит локальный KnotRoute Root CA в trust store текущего пользователя и PAC, который отправляет только `.knot` через локальный proxy.
+
+<Callout type="warning">Не отключайте TLS-проверки браузера. Если `.knot` HTTPS показывает certificate error — исправьте установку локального CA.</Callout>
+
+## 4. Проверьте соединение
+
+```powershell
+knotroute doctor --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json" --probe
+```

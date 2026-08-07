@@ -1,0 +1,13 @@
+# Безопасность
+
+KnotRoute v3 использует self-authenticating node/service identities, hop-encrypted circuits и дополнительное end-to-end шифрование rendezvous stream.
+
+<Callout type="warning">Проект не должен позиционироваться как доказанная анонимность уровня Tor/I2P. Traffic correlation, Sybil resistance, guard design и глобальный наблюдатель требуют отдельного анализа и внешнего аудита.</Callout>
+
+## Важные границы
+
+- `network_id` не является admission credential.
+- Control не участвует в data plane.
+- Beacon не является каталогом `.knot`-сервисов.
+- Restricted hidden services должны использовать application-layer authentication.
+- Service identity и Control/Agent keys — production secrets.

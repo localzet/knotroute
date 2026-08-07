@@ -1,0 +1,19 @@
+# SDK и embedded client
+
+Go-приложение может включить KnotRoute core и не требовать standalone-клиента.
+
+```go
+client, err := knotclient.New(knotclient.Options{
+    DataDir: "./knot-data",
+    Beacons: []string{"https://beacon.example"},
+    CircuitHops: 3,
+})
+if err != nil { panic(err) }
+
+if err := client.Start(ctx); err != nil { panic(err) }
+defer client.Close()
+
+conn, err := client.Dial(ctx, "service-address.knot")
+```
+
+Для Android release также публикуется AAR с `mobile/knotmobile` binding.

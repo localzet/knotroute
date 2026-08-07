@@ -1,0 +1,7 @@
+# Windows client
+
+Install the Windows release, run `knotroute-desktop.exe`, add the network profile and enable `.knot` system integration from the tray. The integration installs a per-device KnotRoute Root CA and a PAC rule scoped to `.knot`.
+
+```powershell
+knotroute doctor --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json" --probe
+```

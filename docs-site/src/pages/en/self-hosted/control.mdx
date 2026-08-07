@@ -1,0 +1,5 @@
+# Control and Agent
+
+Control manages inventory, deployment jobs and onboarding but never routes `.knot` traffic. Agents establish outbound authenticated management sessions to Control and optionally manage KnotRoute Docker workloads.
+
+<Callout type="warning">A Docker socket is effectively host-administrative access. Mount it only into the Agent, never into Control.</Callout>

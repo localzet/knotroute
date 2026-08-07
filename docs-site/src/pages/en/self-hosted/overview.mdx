@@ -1,0 +1,11 @@
+# Self-hosted deployment
+
+1. Generate a non-default `network_id`.
+2. Deploy at least two Beacon endpoints in independent failure domains.
+3. Maintain several stable relay nodes.
+4. Put Control behind HTTPS.
+5. Enroll Agents on Docker hosts.
+6. Publish applications with sidecars.
+7. Generate client onboarding from Control.
+
+<Callout type="warning">A network ID separates overlays; it is not a membership password.</Callout>

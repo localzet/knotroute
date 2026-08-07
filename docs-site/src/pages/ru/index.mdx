@@ -1,0 +1,20 @@
+# KnotRoute без боли
+
+KnotRoute — self-hosted encrypted overlay для сервисов с собственными `.knot`-идентичностями, multi-hop routing и embedded-клиентами.
+
+<Callout>Начинайте не с протокола, а с задачи. Для обычного пользователя нужен клиент и профиль сети; для сайта — sidecar; для инфраструктуры — Beacon/relay; Control нужен только для удобства управления.</Callout>
+
+<Cards>
+  <Card href="/ru/client/windows" title="Открыть .knot-сайт">Установить Windows-клиент, включить системную интеграцию и локальный CA.</Card>
+  <Card href="/ru/client/android" title="Подключиться с Android">Профили сетей, deep-link/QR, встроенный браузер и локальный CA.</Card>
+  <Card href="/ru/self-hosted/docker" title="Опубликовать Docker-сервис">Добавить sidecar рядом с существующим приложением без публичного порта.</Card>
+  <Card href="/ru/self-hosted/overview" title="Развернуть свою сеть">Network ID, 2+ Beacon, relays, Control и Agents.</Card>
+</Cards>
+
+## Что относится к data plane
+
+`knotroute`, Beacon relay, обычные relays, sidecars, circuits, directory и rendezvous. Они продолжают работать без Control.
+
+## Что относится к management plane
+
+`knotroute-control` и `knotroute-agent`. Они нужны для inventory, deployment jobs, onboarding, мониторинга и обновлений, но не маршрутизируют пользовательский трафик.

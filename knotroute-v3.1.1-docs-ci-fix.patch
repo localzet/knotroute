@@ -1,0 +1,1159 @@
+diff --git a/.github/workflows/ops-containers.yml b/.github/workflows/ops-containers.yml
+index 32f0139..40ab336 100644
+--- a/.github/workflows/ops-containers.yml
++++ b/.github/workflows/ops-containers.yml
+@@ -29,14 +29,14 @@ jobs:
+     steps:
+       - uses: actions/checkout@v5
+       - uses: docker/setup-qemu-action@v3
+-      - uses: docker/setup-buildx-action@v3
+-      - uses: docker/login-action@v3
++      - uses: docker/setup-buildx-action@v4
++      - uses: docker/login-action@v4
+         with:
+           registry: ghcr.io
+           username: ${{ github.actor }}
+           password: ${{ secrets.GITHUB_TOKEN }}
+       - id: meta
+-        uses: docker/metadata-action@v5
++        uses: docker/metadata-action@v6
+         with:
+           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+           tags: |
+@@ -44,7 +44,7 @@ jobs:
+             type=semver,pattern={{version}}
+             type=semver,pattern={{major}}.{{minor}}
+             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+-      - uses: docker/build-push-action@v6
++      - uses: docker/build-push-action@v7
+         with:
+           context: .
+           file: ${{ matrix.dockerfile }}
+diff --git a/DOCS-3.1.1.md b/DOCS-3.1.1.md
+new file mode 100644
+index 0000000..927207c
+--- /dev/null
++++ b/DOCS-3.1.1.md
+@@ -0,0 +1,13 @@
++# KnotRoute 3.1.1 docs/CI correction
++
++This overlay supersedes the hand-written `cmd/knotroute-docs` static site from the initial 3.1.0 UX pack.
++
++## Changes
++
++- KnotRoute Docs is now a real Next.js + MDX + Tailwind documentation application, following the same architectural family as Triangle Docs and localzet/server-docs.
++- RU/EN routes, responsive navigation, dark documentation layout, task-first pages, FlexSearch-backed search dialog and MDX components.
++- `Dockerfile.docs` builds a standalone Next.js server on Node 24 and exposes `/api/health`.
++- Removed the old Go docs binary and embedded `internal/ops/docsite` assets.
++- Fixed Control Alpine package name: `libqrencode-tools` provides `qrencode` on Alpine 3.22.
++- Fixed Android `label()` Kotlin shadowing/reassignment compile error.
++- Upgraded Docker Actions to Node-24-era majors: setup-buildx v4, login v4, metadata v6, build-push v7.
+diff --git a/Dockerfile.control b/Dockerfile.control
+index 1fdb9ca..c2d7671 100644
+--- a/Dockerfile.control
++++ b/Dockerfile.control
+@@ -4,7 +4,7 @@ COPY . .
+ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knotroute-control ./cmd/knotroute-control
+ 
+ FROM alpine:3.22
+-RUN apk add --no-cache ca-certificates qrencode && adduser -D -H -u 10001 knotroute && mkdir -p /data && chown knotroute:knotroute /data
++RUN apk add --no-cache ca-certificates libqrencode-tools && adduser -D -H -u 10001 knotroute && mkdir -p /data && chown knotroute:knotroute /data
+ COPY --from=build /out/knotroute-control /usr/local/bin/knotroute-control
+ USER knotroute
+ VOLUME ["/data"]
+diff --git a/Dockerfile.docs b/Dockerfile.docs
+index 73eec75..5ca40e6 100644
+--- a/Dockerfile.docs
++++ b/Dockerfile.docs
+@@ -1,10 +1,24 @@
+-FROM golang:1.25-alpine AS build
+-WORKDIR /src
+-COPY . .
+-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knotroute-docs ./cmd/knotroute-docs
++# syntax=docker/dockerfile:1
++FROM node:24-alpine AS deps
++WORKDIR /app
++COPY docs-site/package.json ./
++RUN npm install --legacy-peer-deps --no-audit --no-fund
+ 
+-FROM scratch
+-COPY --from=build /out/knotroute-docs /knotroute-docs
+-USER 65532:65532
++FROM node:24-alpine AS build
++WORKDIR /app
++ENV NEXT_TELEMETRY_DISABLED=1
++COPY --from=deps /app/node_modules ./node_modules
++COPY docs-site/ ./
++RUN npm run build
++
++FROM node:24-alpine AS runtime
++WORKDIR /app
++ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8080 HOSTNAME=0.0.0.0
++RUN addgroup -S knotroute -g 10001 && adduser -S knotroute -u 10001 -G knotroute
++COPY --from=build --chown=knotroute:knotroute /app/public ./public
++COPY --from=build --chown=knotroute:knotroute /app/.next/standalone ./
++COPY --from=build --chown=knotroute:knotroute /app/.next/static ./.next/static
++USER knotroute
+ EXPOSE 8080
+-ENTRYPOINT ["/knotroute-docs"]
++HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD wget -qO- http://127.0.0.1:8080/api/health >/dev/null || exit 1
++CMD ["node", "server.js"]
+diff --git a/android/app/src/main/java/com/localzet/knotroute/MainActivity.kt b/android/app/src/main/java/com/localzet/knotroute/MainActivity.kt
+index 882721a..3c39506 100644
+--- a/android/app/src/main/java/com/localzet/knotroute/MainActivity.kt
++++ b/android/app/src/main/java/com/localzet/knotroute/MainActivity.kt
+@@ -298,7 +298,7 @@ class MainActivity : Activity() {
+         if (detail.isNotBlank()) addView(TextView(this@MainActivity).apply { text=detail; setTextColor(Color.rgb(150,160,174)); setPadding(0,dp(5),0,0) })
+         layoutParams=LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT).apply{bottomMargin=dp(10)}
+     }
+-    private fun label(text:String)=TextView(this).apply{text=text;setTextColor(Color.rgb(150,160,174));setPadding(0,dp(14),0,dp(6));textSize=12f}
++    private fun label(labelText:String)=TextView(this).apply{this.text=labelText;setTextColor(Color.rgb(150,160,174));setPadding(0,dp(14),0,dp(6));textSize=12f}
+     private fun field(hint:String,multiline:Boolean=false)=EditText(this).apply{this.hint=hint;setTextColor(Color.WHITE);setHintTextColor(Color.rgb(103,113,126));background=solid(Color.rgb(22,26,33),10f);setPadding(dp(12),dp(10),dp(12),dp(10));if(!multiline)setSingleLine()else{minLines=3;gravity=Gravity.TOP}}
+     private fun solid(color:Int,radius:Float)=GradientDrawable().apply{setColor(color);cornerRadius=dp(radius.toInt()).toFloat()}
+     private fun dp(value:Int)=(value*resources.displayMetrics.density).toInt()
+diff --git a/cmd/knotroute-docs/main.go b/cmd/knotroute-docs/main.go
+deleted file mode 100644
+index 1e10e5e..0000000
+--- a/cmd/knotroute-docs/main.go
++++ /dev/null
+@@ -1,61 +0,0 @@
+-package main
+-
+-import (
+-	"io/fs"
+-	"log"
+-	"mime"
+-	"net/http"
+-	"os"
+-	"path/filepath"
+-	"strings"
+-	"time"
+-
+-	"github.com/localzet/knotroute/internal/ops"
+-	"github.com/localzet/knotroute/internal/ops/docsite"
+-)
+-
+-func main() {
+-	listen := env("KNOTROUTE_DOCS_LISTEN", "0.0.0.0:8080")
+-	sub, err := fs.Sub(docsite.FS, "site")
+-	if err != nil {
+-		log.Fatal(err)
+-	}
+-	files := http.FileServer(http.FS(sub))
+-	mux := http.NewServeMux()
+-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+-		w.Header().Set("Content-Type", "application/json")
+-		_, _ = w.Write([]byte(`{"ok":true,"version":"` + ops.Version + `"}`))
+-	})
+-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+-		if r.URL.Path != "/" {
+-			ext := filepath.Ext(r.URL.Path)
+-			if ext != "" {
+-				if ct := mime.TypeByExtension(ext); ct != "" {
+-					w.Header().Set("Content-Type", ct)
+-				}
+-				w.Header().Set("Cache-Control", "public,max-age=3600")
+-				files.ServeHTTP(w, r)
+-				return
+-			}
+-		}
+-		raw, _ := fs.ReadFile(sub, "index.html")
+-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+-		w.Header().Set("Cache-Control", "no-cache")
+-		_, _ = w.Write(raw)
+-	})
+-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+-		w.Header().Set("X-Content-Type-Options", "nosniff")
+-		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
+-		mux.ServeHTTP(w, r)
+-	})
+-	srv := &http.Server{Addr: listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
+-	log.Printf("KnotRoute Docs %s listening on %s", ops.Version, listen)
+-	log.Fatal(srv.ListenAndServe())
+-}
+-func env(k, d string) string {
+-	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+-		return v
+-	}
+-	return d
+-}
+diff --git a/docs-site/jsconfig.json b/docs-site/jsconfig.json
+new file mode 100644
+index 0000000..8a33870
+--- /dev/null
++++ b/docs-site/jsconfig.json
+@@ -0,0 +1,6 @@
++{
++  "compilerOptions": {
++    "baseUrl": ".",
++    "paths": { "@/*": ["src/*"] }
++  }
++}
+diff --git a/docs-site/next.config.mjs b/docs-site/next.config.mjs
+new file mode 100644
+index 0000000..04ca59f
+--- /dev/null
++++ b/docs-site/next.config.mjs
+@@ -0,0 +1,14 @@
++import createMDX from '@next/mdx'
++import remarkGfm from 'remark-gfm'
++
++const withMDX = createMDX({ options: { remarkPlugins: [remarkGfm] } })
++
++export default withMDX({
++  output: 'standalone',
++  pageExtensions: ['js', 'jsx', 'md', 'mdx'],
++  poweredByHeader: false,
++  reactStrictMode: true,
++  async redirects() {
++    return [{ source: '/', destination: '/ru', permanent: false }]
++  },
++})
+diff --git a/docs-site/package.json b/docs-site/package.json
+new file mode 100644
+index 0000000..68d0112
+--- /dev/null
++++ b/docs-site/package.json
+@@ -0,0 +1,36 @@
++{
++  "name": "knotroute-docs",
++  "version": "3.1.1",
++  "private": true,
++  "scripts": {
++    "dev": "next dev",
++    "build": "next build",
++    "start": "next start",
++    "lint": "next lint"
++  },
++  "browserslist": "defaults, not ie <= 11",
++  "dependencies": {
++    "@headlessui/react": "^1.7.13",
++    "@mdx-js/loader": "^2.1.5",
++    "@mdx-js/react": "^2.1.5",
++    "@next/mdx": "^13.0.3",
++    "@tailwindcss/typography": "^0.5.8",
++    "autoprefixer": "^10.4.7",
++    "clsx": "^2.1.0",
++    "flexsearch": "^0.7.31",
++    "focus-visible": "^5.2.0",
++    "framer-motion": "7.8.1",
++    "next": "15.4.7",
++    "postcss": "^8.4.31",
++    "react": "18.2.0",
++    "react-dom": "18.2.0",
++    "remark-gfm": "^3.0.1",
++    "tailwindcss": "^3.3.0"
++  },
++  "devDependencies": {
++    "eslint": "8.57.1",
++    "eslint-config-next": "15.4.7",
++    "prettier": "^3.3.3",
++    "prettier-plugin-tailwindcss": "^0.6.8"
++  }
++}
+diff --git a/docs-site/postcss.config.js b/docs-site/postcss.config.js
+new file mode 100644
+index 0000000..2959567
+--- /dev/null
++++ b/docs-site/postcss.config.js
+@@ -0,0 +1 @@
++module.exports = { plugins: { tailwindcss: {}, autoprefixer: {} } }
+diff --git a/docs-site/public/favicon.svg b/docs-site/public/favicon.svg
+new file mode 100644
+index 0000000..056bf9a
+--- /dev/null
++++ b/docs-site/public/favicon.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#10151d"/><path d="M18 18c8-8 20-8 28 0s8 20 0 28-20 8-28 0-8-20 0-28Z M21 42 43 20 M20 23l22 21" fill="none" stroke="#9dffbd" stroke-width="5" stroke-linecap="round"/></svg>
+diff --git a/docs-site/src/components/DocsLayout.jsx b/docs-site/src/components/DocsLayout.jsx
+new file mode 100644
+index 0000000..8eee877
+--- /dev/null
++++ b/docs-site/src/components/DocsLayout.jsx
+@@ -0,0 +1,25 @@
++import Head from 'next/head'
++import Link from 'next/link'
++import { useRouter } from 'next/router'
++import { Logo } from './Logo'
++import { Navigation } from './Navigation'
++import { Search } from './Search'
++
++export function DocsLayout({ children }) {
++  const router = useRouter()
++  const language = router.pathname.startsWith('/en') ? 'en' : 'ru'
++  const alternate = router.asPath.replace(/^\/(ru|en)/, `/${language === 'ru' ? 'en' : 'ru'}/`).replace(/^\/(ru|en)$/, `/${language === 'ru' ? 'en' : 'ru'}`)
++  return <>
++    <Head><title>KnotRoute Docs</title><meta name="description" content="KnotRoute self-hosted encrypted overlay network documentation" /></Head>
++    <div className="min-h-screen bg-ink text-slate-300">
++      <div className="pointer-events-none fixed inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_50%_-20%,rgba(53,212,125,.18),transparent_58%)]" />
++      <header className="sticky top-0 z-40 border-b border-line/80 bg-ink/85 backdrop-blur-xl">
++        <div className="mx-auto flex h-16 max-w-[1500px] items-center gap-5 px-5 lg:px-8"><Logo language={language}/><div className="ml-auto flex items-center gap-3"><Link href={alternate} className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white">{language === 'ru' ? 'EN' : 'RU'}</Link><a href="https://github.com/localzet/knotroute" className="text-sm text-slate-400 hover:text-white">GitHub ↗</a></div></div>
++      </header>
++      <div className="mx-auto grid max-w-[1500px] grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
++        <aside className="hidden min-h-[calc(100vh-4rem)] border-r border-line px-5 py-7 lg:block"><Search language={language}/><div className="mt-7"><Navigation language={language}/></div></aside>
++        <main className="min-w-0 px-5 py-9 sm:px-8 lg:px-12 xl:px-16"><div className="mx-auto max-w-4xl"><div className="mb-7 lg:hidden"><Search language={language}/></div><article className="prose prose-invert max-w-none prose-headings:scroll-mt-24 prose-headings:font-semibold prose-a:text-knot-300 prose-code:text-knot-300 prose-pre:border prose-pre:border-line prose-pre:bg-[#0b1016]">{children}</article></div></main>
++      </div>
++    </div>
++  </>
++}
+diff --git a/docs-site/src/components/Logo.jsx b/docs-site/src/components/Logo.jsx
+new file mode 100644
+index 0000000..d2b453c
+--- /dev/null
++++ b/docs-site/src/components/Logo.jsx
+@@ -0,0 +1,13 @@
++import Link from 'next/link'
++
++export function Logo({ language = 'ru' }) {
++  return <Link href={`/${language}`} className="group flex items-center gap-3 font-semibold text-white">
++    <span className="grid h-9 w-9 place-items-center rounded-xl border border-knot-400/30 bg-knot-400/10 shadow-glow">
++      <svg viewBox="0 0 32 32" className="h-5 w-5 fill-none stroke-knot-300" strokeWidth="2.4">
++        <path d="M8 8c4-4 12-4 16 0s4 12 0 16-12 4-16 0-4-12 0-16Z" />
++        <path d="m10 21 12-10M9 12l11 11" />
++      </svg>
++    </span>
++    <span>KnotRoute <span className="text-slate-500">Docs</span></span>
++  </Link>
++}
+diff --git a/docs-site/src/components/Navigation.jsx b/docs-site/src/components/Navigation.jsx
+new file mode 100644
+index 0000000..997d5f9
+--- /dev/null
++++ b/docs-site/src/components/Navigation.jsx
+@@ -0,0 +1,14 @@
++import clsx from 'clsx'
++import Link from 'next/link'
++import { useRouter } from 'next/router'
++import { navigation } from '@/lib/navigation'
++
++export function Navigation({ language }) {
++  const router = useRouter()
++  return <nav className="space-y-7">
++    {(navigation[language] || navigation.en).map(section => <div key={section.title}>
++      <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[.18em] text-slate-600">{section.title}</div>
++      <div className="space-y-1">{section.links.map(link => <Link key={link.href} href={link.href} className={clsx('block rounded-lg px-2 py-1.5 text-sm transition', router.pathname === link.href ? 'bg-knot-400/10 text-knot-300' : 'text-slate-400 hover:bg-white/[.035] hover:text-white')}>{link.title}</Link>)}</div>
++    </div>)}
++  </nav>
++}
+diff --git a/docs-site/src/components/Search.jsx b/docs-site/src/components/Search.jsx
+new file mode 100644
+index 0000000..48c01ec
+--- /dev/null
++++ b/docs-site/src/components/Search.jsx
+@@ -0,0 +1,36 @@
++import { Dialog } from '@headlessui/react'
++import FlexSearch from 'flexsearch'
++import { useMemo, useState } from 'react'
++import { useRouter } from 'next/router'
++import { flatNavigation } from '@/lib/navigation'
++
++export function Search({ language }) {
++  const router = useRouter()
++  const [open, setOpen] = useState(false)
++  const [query, setQuery] = useState('')
++  const docs = useMemo(() => flatNavigation(language), [language])
++  const index = useMemo(() => {
++    const idx = new FlexSearch.Index({ tokenize: 'forward', cache: true })
++    docs.forEach((doc, i) => idx.add(i, `${doc.title} ${doc.section}`))
++    return idx
++  }, [docs])
++  const results = query.trim() ? index.search(query, 8).map(i => docs[i]) : docs.slice(0, 7)
++  return <>
++    <button onClick={() => setOpen(true)} className="flex w-full items-center justify-between rounded-xl border border-line bg-white/[.035] px-3 py-2 text-left text-sm text-slate-400 hover:border-slate-600">
++      <span>{language === 'ru' ? 'Поиск по документации' : 'Search documentation'}</span><kbd className="rounded border border-line px-1.5 text-xs">/</kbd>
++    </button>
++    <Dialog open={open} onClose={setOpen} className="relative z-50">
++      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
++      <div className="fixed inset-0 flex items-start justify-center p-4 pt-[12vh]">
++        <Dialog.Panel className="w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-[#0d1219] shadow-2xl">
++          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder={language === 'ru' ? 'Начните печатать…' : 'Start typing…'} className="w-full border-b border-line bg-transparent px-5 py-4 text-base text-white outline-none" />
++          <div className="max-h-80 overflow-y-auto p-2">
++            {results.map(item => <button key={item.href} onClick={() => { setOpen(false); router.push(item.href) }} className="block w-full rounded-xl px-3 py-3 text-left hover:bg-white/[.05]">
++              <div className="text-sm font-medium text-white">{item.title}</div><div className="mt-0.5 text-xs text-slate-500">{item.section}</div>
++            </button>)}
++          </div>
++        </Dialog.Panel>
++      </div>
++    </Dialog>
++  </>
++}
+diff --git a/docs-site/src/components/mdx.jsx b/docs-site/src/components/mdx.jsx
+new file mode 100644
+index 0000000..31d4a5b
+--- /dev/null
++++ b/docs-site/src/components/mdx.jsx
+@@ -0,0 +1,9 @@
++import Link from 'next/link'
++
++export function Callout({ children, type = 'note' }) {
++  const classes = type === 'warning' ? 'border-amber-400/25 bg-amber-400/[.07]' : 'border-knot-400/20 bg-knot-400/[.06]'
++  return <div className={`my-6 rounded-2xl border px-5 py-4 text-sm ${classes}`}>{children}</div>
++}
++export function Cards({ children }) { return <div className="not-prose my-7 grid gap-4 md:grid-cols-2">{children}</div> }
++export function Card({ href, title, children }) { return <Link href={href} className="group rounded-2xl border border-line bg-white/[.025] p-5 transition hover:-translate-y-0.5 hover:border-knot-400/30 hover:bg-knot-400/[.035]"><div className="font-semibold text-white group-hover:text-knot-300">{title} →</div><div className="mt-2 text-sm leading-6 text-slate-400">{children}</div></Link> }
++export const mdxComponents = { Callout, Cards, Card }
+diff --git a/docs-site/src/lib/navigation.js b/docs-site/src/lib/navigation.js
+new file mode 100644
+index 0000000..6ef925d
+--- /dev/null
++++ b/docs-site/src/lib/navigation.js
+@@ -0,0 +1,44 @@
++export const navigation = {
++  ru: [
++    { title: 'Начало', links: [
++      { title: 'Что такое KnotRoute', href: '/ru' },
++      { title: 'Windows-клиент', href: '/ru/client/windows' },
++      { title: 'Android-клиент', href: '/ru/client/android' },
++    ]},
++    { title: 'Self-hosted', links: [
++      { title: 'Схема развёртывания', href: '/ru/self-hosted/overview' },
++      { title: 'Control и Agent', href: '/ru/self-hosted/control' },
++      { title: 'Beacon и relays', href: '/ru/self-hosted/beacon' },
++      { title: 'Docker sidecar', href: '/ru/self-hosted/docker' },
++      { title: 'Traefik + KnotRoute', href: '/ru/self-hosted/traefik' },
++    ]},
++    { title: 'Разработка', links: [
++      { title: 'SDK и embedded client', href: '/ru/development/sdk' },
++      { title: 'Безопасность', href: '/ru/security' },
++    ]},
++  ],
++  en: [
++    { title: 'Start', links: [
++      { title: 'What is KnotRoute', href: '/en' },
++      { title: 'Windows client', href: '/en/client/windows' },
++      { title: 'Android client', href: '/en/client/android' },
++    ]},
++    { title: 'Self-hosted', links: [
++      { title: 'Deployment overview', href: '/en/self-hosted/overview' },
++      { title: 'Control and Agent', href: '/en/self-hosted/control' },
++      { title: 'Beacon and relays', href: '/en/self-hosted/beacon' },
++      { title: 'Docker sidecar', href: '/en/self-hosted/docker' },
++      { title: 'Traefik + KnotRoute', href: '/en/self-hosted/traefik' },
++    ]},
++    { title: 'Development', links: [
++      { title: 'SDK and embedded client', href: '/en/development/sdk' },
++      { title: 'Security', href: '/en/security' },
++    ]},
++  ],
++}
++
++export function flatNavigation(language) {
++  return (navigation[language] || navigation.en).flatMap(section =>
++    section.links.map(link => ({ ...link, section: section.title })),
++  )
++}
+diff --git a/docs-site/src/pages/_app.jsx b/docs-site/src/pages/_app.jsx
+new file mode 100644
+index 0000000..f523ffb
+--- /dev/null
++++ b/docs-site/src/pages/_app.jsx
+@@ -0,0 +1,9 @@
++import 'focus-visible'
++import '@/styles/tailwind.css'
++import { MDXProvider } from '@mdx-js/react'
++import { DocsLayout } from '@/components/DocsLayout'
++import { mdxComponents } from '@/components/mdx'
++
++export default function App({ Component, pageProps }) {
++  return <MDXProvider components={mdxComponents}><DocsLayout><Component {...pageProps} /></DocsLayout></MDXProvider>
++}
+diff --git a/docs-site/src/pages/api/health.js b/docs-site/src/pages/api/health.js
+new file mode 100644
+index 0000000..dc2ae5c
+--- /dev/null
++++ b/docs-site/src/pages/api/health.js
+@@ -0,0 +1 @@
++export default function handler(req, res) { res.status(200).json({ ok: true, service: 'knotroute-docs' }) }
+diff --git a/docs-site/src/pages/en/client/android.mdx b/docs-site/src/pages/en/client/android.mdx
+new file mode 100644
+index 0000000..aa9dd2a
+--- /dev/null
++++ b/docs-site/src/pages/en/client/android.mdx
+@@ -0,0 +1,3 @@
++# Android client
++
++The Android APK embeds the KnotRoute core and does not use `VpnService`/TUN. Add a network using a `knotroute://join` deep link/QR or manually enter the network ID and Beacon URLs. Install the local CA through Android's system certificate installer for HTTPS `.knot` browsing.
+diff --git a/docs-site/src/pages/en/client/windows.mdx b/docs-site/src/pages/en/client/windows.mdx
+new file mode 100644
+index 0000000..7ce9763
+--- /dev/null
++++ b/docs-site/src/pages/en/client/windows.mdx
+@@ -0,0 +1,7 @@
++# Windows client
++
++Install the Windows release, run `knotroute-desktop.exe`, add the network profile and enable `.knot` system integration from the tray. The integration installs a per-device KnotRoute Root CA and a PAC rule scoped to `.knot`.
++
++```powershell
++knotroute doctor --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json" --probe
++```
+diff --git a/docs-site/src/pages/en/development/sdk.mdx b/docs-site/src/pages/en/development/sdk.mdx
+new file mode 100644
+index 0000000..48f2c98
+--- /dev/null
++++ b/docs-site/src/pages/en/development/sdk.mdx
+@@ -0,0 +1,3 @@
++# SDK and embedded client
++
++Applications can embed KnotRoute instead of requiring a separately installed desktop client. Use `pkg/knotclient` in Go or the Android AAR built from `mobile/knotmobile`.
+diff --git a/docs-site/src/pages/en/index.mdx b/docs-site/src/pages/en/index.mdx
+new file mode 100644
+index 0000000..7daa418
+--- /dev/null
++++ b/docs-site/src/pages/en/index.mdx
+@@ -0,0 +1,12 @@
++# KnotRoute, without the pain
++
++KnotRoute is a self-hosted encrypted service overlay with `.knot` identities, multi-hop routing, hidden-service rendezvous and embeddable clients.
++
++<Cards>
++  <Card href="/en/client/windows" title="Open a .knot site">Install the desktop client, enable `.knot` integration and trust the local CA.</Card>
++  <Card href="/en/client/android" title="Connect from Android">Network profiles, deep links, embedded browser and local CA.</Card>
++  <Card href="/en/self-hosted/docker" title="Publish a Docker service">Run a sidecar next to an existing application without exposing its private port.</Card>
++  <Card href="/en/self-hosted/overview" title="Deploy your own network">Network ID, multiple Beacons, relays, Control and Agents.</Card>
++</Cards>
++
++Control is a management plane only. The overlay, Beacons, relays and services continue to operate when Control is offline.
+diff --git a/docs-site/src/pages/en/security.mdx b/docs-site/src/pages/en/security.mdx
+new file mode 100644
+index 0000000..865fdc2
+--- /dev/null
++++ b/docs-site/src/pages/en/security.mdx
+@@ -0,0 +1,5 @@
++# Security model
++
++KnotRoute v3 uses self-authenticating identities, hop-encrypted circuits and an additional end-to-end rendezvous stream layer.
++
++<Callout type="warning">Do not market v3 as Tor-equivalent anonymity. Traffic correlation, Sybil resistance, guard selection and global-adversary analysis require dedicated research and external review.</Callout>
+diff --git a/docs-site/src/pages/en/self-hosted/beacon.mdx b/docs-site/src/pages/en/self-hosted/beacon.mdx
+new file mode 100644
+index 0000000..5177a34
+--- /dev/null
++++ b/docs-site/src/pages/en/self-hosted/beacon.mdx
+@@ -0,0 +1,3 @@
++# Beacon and relays
++
++Beacon is soft-state peer discovery, not a central service registry. Publish the Beacon HTTP endpoint through HTTPS and expose the raw KnotRoute relay transport separately on TCP/7447.
+diff --git a/docs-site/src/pages/en/self-hosted/control.mdx b/docs-site/src/pages/en/self-hosted/control.mdx
+new file mode 100644
+index 0000000..7fe27fa
+--- /dev/null
++++ b/docs-site/src/pages/en/self-hosted/control.mdx
+@@ -0,0 +1,5 @@
++# Control and Agent
++
++Control manages inventory, deployment jobs and onboarding but never routes `.knot` traffic. Agents establish outbound authenticated management sessions to Control and optionally manage KnotRoute Docker workloads.
++
++<Callout type="warning">A Docker socket is effectively host-administrative access. Mount it only into the Agent, never into Control.</Callout>
+diff --git a/docs-site/src/pages/en/self-hosted/docker.mdx b/docs-site/src/pages/en/self-hosted/docker.mdx
+new file mode 100644
+index 0000000..3ab69d1
+--- /dev/null
++++ b/docs-site/src/pages/en/self-hosted/docker.mdx
+@@ -0,0 +1,21 @@
++# Publish a Docker service
++
++```yaml
++services:
++  app:
++    image: example/app:latest
++    networks: [private]
++  knotroute:
++    image: ghcr.io/localzet/knotroute-sidecar:latest
++    networks: [private]
++    volumes: [knotroute-data:/data]
++    environment:
++      KNOTROUTE_NETWORK_ID: "kn_..."
++      KNOTROUTE_BEACONS: "https://beacon-a.example,https://beacon-b.example"
++      KNOTROUTE_SERVICE_NAME: "web"
++      KNOTROUTE_SERVICE_TARGET: "app:8080"
++volumes:
++  knotroute-data:
++```
++
++Persist `/data`; it holds the service identity that determines the stable `.knot` address.
+diff --git a/docs-site/src/pages/en/self-hosted/overview.mdx b/docs-site/src/pages/en/self-hosted/overview.mdx
+new file mode 100644
+index 0000000..e5bae7e
+--- /dev/null
++++ b/docs-site/src/pages/en/self-hosted/overview.mdx
+@@ -0,0 +1,11 @@
++# Self-hosted deployment
++
++1. Generate a non-default `network_id`.
++2. Deploy at least two Beacon endpoints in independent failure domains.
++3. Maintain several stable relay nodes.
++4. Put Control behind HTTPS.
++5. Enroll Agents on Docker hosts.
++6. Publish applications with sidecars.
++7. Generate client onboarding from Control.
++
++<Callout type="warning">A network ID separates overlays; it is not a membership password.</Callout>
+diff --git a/docs-site/src/pages/en/self-hosted/traefik.mdx b/docs-site/src/pages/en/self-hosted/traefik.mdx
+new file mode 100644
+index 0000000..e15bada
+--- /dev/null
++++ b/docs-site/src/pages/en/self-hosted/traefik.mdx
+@@ -0,0 +1,7 @@
++# Traefik + KnotRoute
++
++An application can be published through both an ordinary Traefik ingress and a KnotRoute sidecar:
++
++```text
++Internet ─► Traefik ─► app:8080 ◄─ KnotRoute sidecar ◄─ overlay
++```
+diff --git a/docs-site/src/pages/ru/client/android.mdx b/docs-site/src/pages/ru/client/android.mdx
+new file mode 100644
+index 0000000..a26c736
+--- /dev/null
++++ b/docs-site/src/pages/ru/client/android.mdx
+@@ -0,0 +1,14 @@
++# Android-клиент
++
++Android APK содержит KnotRoute core внутри приложения и не использует `VpnService`/TUN.
++
++## Подключение
++
++1. Откройте QR/deep-link `knotroute://join?...` из Control или создайте профиль вручную.
++2. Выберите профиль сети и запустите foreground service.
++3. Для HTTPS установите локальный CA через штатный Android certificate installer.
++4. Открывайте `.knot` в встроенном браузере.
++
++## Что в QR
++
++Только название профиля, `network_id` и Beacon URL. Приватных ключей там нет.
+diff --git a/docs-site/src/pages/ru/client/windows.mdx b/docs-site/src/pages/ru/client/windows.mdx
+new file mode 100644
+index 0000000..d1f4a77
+--- /dev/null
++++ b/docs-site/src/pages/ru/client/windows.mdx
+@@ -0,0 +1,21 @@
++# Windows-клиент
++
++## 1. Установите KnotRoute
++
++Скачайте Windows x64/ARM64 archive из GitHub Releases и запустите `Install-KnotRoute.ps1`. Для обычной работы запускайте `knotroute-desktop.exe`.
++
++## 2. Добавьте сеть
++
++Проще всего получить параметры из KnotRoute Control: `network_id` и 2+ Beacon URL. CLI также поддерживает `.knotinvite`.
++
++## 3. Включите `.knot integration`
++
++Tray установит локальный KnotRoute Root CA в trust store текущего пользователя и PAC, который отправляет только `.knot` через локальный proxy.
++
++<Callout type="warning">Не отключайте TLS-проверки браузера. Если `.knot` HTTPS показывает certificate error — исправьте установку локального CA.</Callout>
++
++## 4. Проверьте соединение
++
++```powershell
++knotroute doctor --config "$env:LOCALAPPDATA\KnotRoute\knotroute.json" --probe
++```
+diff --git a/docs-site/src/pages/ru/development/sdk.mdx b/docs-site/src/pages/ru/development/sdk.mdx
+new file mode 100644
+index 0000000..4936d6b
+--- /dev/null
++++ b/docs-site/src/pages/ru/development/sdk.mdx
+@@ -0,0 +1,19 @@
++# SDK и embedded client
++
++Go-приложение может включить KnotRoute core и не требовать standalone-клиента.
++
++```go
++client, err := knotclient.New(knotclient.Options{
++    DataDir: "./knot-data",
++    Beacons: []string{"https://beacon.example"},
++    CircuitHops: 3,
++})
++if err != nil { panic(err) }
++
++if err := client.Start(ctx); err != nil { panic(err) }
++defer client.Close()
++
++conn, err := client.Dial(ctx, "service-address.knot")
++```
++
++Для Android release также публикуется AAR с `mobile/knotmobile` binding.
+diff --git a/docs-site/src/pages/ru/index.mdx b/docs-site/src/pages/ru/index.mdx
+new file mode 100644
+index 0000000..d1004e7
+--- /dev/null
++++ b/docs-site/src/pages/ru/index.mdx
+@@ -0,0 +1,20 @@
++# KnotRoute без боли
++
++KnotRoute — self-hosted encrypted overlay для сервисов с собственными `.knot`-идентичностями, multi-hop routing и embedded-клиентами.
++
++<Callout>Начинайте не с протокола, а с задачи. Для обычного пользователя нужен клиент и профиль сети; для сайта — sidecar; для инфраструктуры — Beacon/relay; Control нужен только для удобства управления.</Callout>
++
++<Cards>
++  <Card href="/ru/client/windows" title="Открыть .knot-сайт">Установить Windows-клиент, включить системную интеграцию и локальный CA.</Card>
++  <Card href="/ru/client/android" title="Подключиться с Android">Профили сетей, deep-link/QR, встроенный браузер и локальный CA.</Card>
++  <Card href="/ru/self-hosted/docker" title="Опубликовать Docker-сервис">Добавить sidecar рядом с существующим приложением без публичного порта.</Card>
++  <Card href="/ru/self-hosted/overview" title="Развернуть свою сеть">Network ID, 2+ Beacon, relays, Control и Agents.</Card>
++</Cards>
++
++## Что относится к data plane
++
++`knotroute`, Beacon relay, обычные relays, sidecars, circuits, directory и rendezvous. Они продолжают работать без Control.
++
++## Что относится к management plane
++
++`knotroute-control` и `knotroute-agent`. Они нужны для inventory, deployment jobs, onboarding, мониторинга и обновлений, но не маршрутизируют пользовательский трафик.
+diff --git a/docs-site/src/pages/ru/security.mdx b/docs-site/src/pages/ru/security.mdx
+new file mode 100644
+index 0000000..55448ad
+--- /dev/null
++++ b/docs-site/src/pages/ru/security.mdx
+@@ -0,0 +1,13 @@
++# Безопасность
++
++KnotRoute v3 использует self-authenticating node/service identities, hop-encrypted circuits и дополнительное end-to-end шифрование rendezvous stream.
++
++<Callout type="warning">Проект не должен позиционироваться как доказанная анонимность уровня Tor/I2P. Traffic correlation, Sybil resistance, guard design и глобальный наблюдатель требуют отдельного анализа и внешнего аудита.</Callout>
++
++## Важные границы
++
++- `network_id` не является admission credential.
++- Control не участвует в data plane.
++- Beacon не является каталогом `.knot`-сервисов.
++- Restricted hidden services должны использовать application-layer authentication.
++- Service identity и Control/Agent keys — production secrets.
+diff --git a/docs-site/src/pages/ru/self-hosted/beacon.mdx b/docs-site/src/pages/ru/self-hosted/beacon.mdx
+new file mode 100644
+index 0000000..59c48db
+--- /dev/null
++++ b/docs-site/src/pages/ru/self-hosted/beacon.mdx
+@@ -0,0 +1,20 @@
++# Beacon и relays
++
++Beacon — soft-state discovery, а не центральная база сервисов. Он принимает подписанные node announcements и отдаёт candidate peers.
++
++```yaml
++services:
++  beacon:
++    image: ghcr.io/localzet/knotroute-beacon:latest
++    restart: unless-stopped
++    ports:
++      - "7447:7447"
++    environment:
++      KNOTROUTE_NETWORK_ID: "kn_..."
++      KNOTROUTE_BEACON_LISTEN: "0.0.0.0:8080"
++      KNOTROUTE_BEACON_RELAY: "true"
++      KNOTROUTE_BEACON_RELAY_LISTEN: "0.0.0.0:7447"
++      KNOTROUTE_BEACON_RELAY_ADVERTISE: "relay-a.example.net:7447"
++```
++
++HTTP discovery обычно публикуется через Traefik/Caddy как HTTPS. `7447/tcp` — сырой KnotRoute transport.
+diff --git a/docs-site/src/pages/ru/self-hosted/control.mdx b/docs-site/src/pages/ru/self-hosted/control.mdx
+new file mode 100644
+index 0000000..7806fbe
+--- /dev/null
++++ b/docs-site/src/pages/ru/self-hosted/control.mdx
+@@ -0,0 +1,38 @@
++# KnotRoute Control и Agent
++
++Control — опциональная веб-панель для networks, servers, Beacons, relays, services, jobs и onboarding.
++
++## Control
++
++```yaml
++services:
++  control:
++    image: ghcr.io/localzet/knotroute-control:latest
++    restart: unless-stopped
++    volumes:
++      - control-data:/data
++    environment:
++      KNOTROUTE_CONTROL_ADMIN_PASSWORD: ${KNOTROUTE_CONTROL_ADMIN_PASSWORD}
++      KNOTROUTE_CONTROL_ENROLL_TOKEN: ${KNOTROUTE_CONTROL_ENROLL_TOKEN}
++```
++
++Публикуйте Control только через HTTPS reverse proxy.
++
++## Agent
++
++Agent сам устанавливает исходящую HTTPS-связь с Control. Открывать management port на сервере не требуется.
++
++```yaml
++  agent:
++    image: ghcr.io/localzet/knotroute-agent:latest
++    restart: unless-stopped
++    volumes:
++      - agent-data:/data
++      - /var/run/docker.sock:/var/run/docker.sock
++    environment:
++      KNOTROUTE_CONTROL_URL: https://control.example.net
++      KNOTROUTE_AGENT_ENROLL_TOKEN: ${KNOTROUTE_CONTROL_ENROLL_TOKEN}
++      KNOTROUTE_AGENT_DOCKER: "true"
++```
++
++<Callout type="warning">Docker socket почти эквивалентен root-доступу к хосту. Монтируйте его только Agent'у, никогда Control.</Callout>
+diff --git a/docs-site/src/pages/ru/self-hosted/docker.mdx b/docs-site/src/pages/ru/self-hosted/docker.mdx
+new file mode 100644
+index 0000000..84cb0e5
+--- /dev/null
++++ b/docs-site/src/pages/ru/self-hosted/docker.mdx
+@@ -0,0 +1,32 @@
++# Публикация Docker-сервиса
++
++Допустим приложение доступно внутри Docker network как `app:8080`.
++
++```yaml
++services:
++  app:
++    image: example/app:latest
++    networks: [private]
++
++  knotroute:
++    image: ghcr.io/localzet/knotroute-sidecar:latest
++    restart: unless-stopped
++    networks: [private]
++    volumes:
++      - knotroute-data:/data
++    environment:
++      KNOTROUTE_NETWORK_ID: "kn_..."
++      KNOTROUTE_BEACONS: "https://beacon-a.example,https://beacon-b.example"
++      KNOTROUTE_SERVICE_NAME: "web"
++      KNOTROUTE_SERVICE_TARGET: "app:8080"
++
++networks:
++  private:
++
++volumes:
++  knotroute-data:
++```
++
++Не публикуйте `app:8080` на host, если сервис нужен только через KnotRoute.
++
++<Callout type="warning">Не удаляйте persistent `/data`: там лежит service identity. Потеря identity означает новый canonical `.knot` address.</Callout>
+diff --git a/docs-site/src/pages/ru/self-hosted/overview.mdx b/docs-site/src/pages/ru/self-hosted/overview.mdx
+new file mode 100644
+index 0000000..25037bb
+--- /dev/null
++++ b/docs-site/src/pages/ru/self-hosted/overview.mdx
+@@ -0,0 +1,27 @@
++# Self-hosted: общая схема
++
++Рекомендуемый первый production-layout:
++
++```text
++                  HTTPS                       TCP/7447
++clients ───────► Beacon A ─────────────────► Relay A
++   │             Beacon B ─────────────────► Relay B
++   │                    ╲                    ╱
++   └─────────────── encrypted overlay ──────┘
++                         │
++                    Sidecar / service
++
++Control ── management only ──► Agents ──► managed containers
++```
++
++## Минимальный порядок
++
++1. Создайте отдельный `network_id`.
++2. Разверните минимум два Beacon endpoint в разных failure domains.
++3. Держите несколько постоянно доступных relay-node.
++4. Установите Control за HTTPS.
++5. Подключите Agents на Docker-хостах.
++6. Публикуйте приложения sidecar-контейнерами.
++7. Выдавайте пользователям QR/инструкцию из Control.
++
++<Callout type="warning">`network_id` — namespace сети, а не пароль или membership certificate.</Callout>
+diff --git a/docs-site/src/pages/ru/self-hosted/traefik.mdx b/docs-site/src/pages/ru/self-hosted/traefik.mdx
+new file mode 100644
+index 0000000..eba9638
+--- /dev/null
++++ b/docs-site/src/pages/ru/self-hosted/traefik.mdx
+@@ -0,0 +1,9 @@
++# Traefik + KnotRoute
++
++Один контейнер приложения может одновременно иметь публичный ingress и приватную публикацию через KnotRoute.
++
++```text
++Internet ─► Traefik ─► app:8080 ◄─ KnotRoute sidecar ◄─ overlay
++```
++
++Подключите приложение к двум сетям: существующей Traefik network и отдельной private network с sidecar. Sidecar обращается к внутреннему HTTP-порту приложения; публичный TLS и `.knot` browser TLS — разные слои.
+diff --git a/docs-site/src/styles/tailwind.css b/docs-site/src/styles/tailwind.css
+new file mode 100644
+index 0000000..e4ca471
+--- /dev/null
++++ b/docs-site/src/styles/tailwind.css
+@@ -0,0 +1,11 @@
++@tailwind base;
++@tailwind components;
++@tailwind utilities;
++
++:root { color-scheme: dark; }
++html { background: #080b10; }
++body { margin: 0; background: #080b10; }
++::selection { background: rgba(103,239,160,.23); color: white; }
++.prose h1 { font-size: 2.55rem; letter-spacing: -.04em; }
++.prose h2 { margin-top: 2.4em; border-top: 1px solid #202938; padding-top: 1.4em; }
++.prose pre code { color: #d7e1ec; }
+diff --git a/docs-site/tailwind.config.js b/docs-site/tailwind.config.js
+new file mode 100644
+index 0000000..b16211c
+--- /dev/null
++++ b/docs-site/tailwind.config.js
+@@ -0,0 +1,17 @@
++/** @type {import('tailwindcss').Config} */
++module.exports = {
++  darkMode: 'class',
++  content: ['./src/**/*.{js,jsx,md,mdx}'],
++  theme: {
++    extend: {
++      colors: {
++        ink: '#080b10',
++        panel: '#10151d',
++        line: '#202938',
++        knot: { 300: '#9dffbd', 400: '#67efa0', 500: '#35d47d' },
++      },
++      boxShadow: { glow: '0 0 80px rgba(53,212,125,.12)' },
++    },
++  },
++  plugins: [require('@tailwindcss/typography')],
++}
+diff --git a/internal/ops/docsite/embed.go b/internal/ops/docsite/embed.go
+deleted file mode 100644
+index 9ae9553..0000000
+--- a/internal/ops/docsite/embed.go
++++ /dev/null
+@@ -1,6 +0,0 @@
+-package docsite
+-
+-import "embed"
+-
+-//go:embed site/*
+-var FS embed.FS
+diff --git a/internal/ops/docsite/site/app.js b/internal/ops/docsite/site/app.js
+deleted file mode 100644
+index 08e8c87..0000000
+--- a/internal/ops/docsite/site/app.js
++++ /dev/null
+@@ -1,7 +0,0 @@
+-const docs=window.KNOT_DOCS;let lang=localStorage.knotDocsLang||'ru';const $=s=>document.querySelector(s);const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+-function pageId(){return location.hash.replace(/^#\//,'')||'start'}
+-function renderNav(){const d=docs[lang];$('#nav').innerHTML=d.groups.map(g=>`<div class="nav-group">${esc(g.title)}</div>${g.pages.map(([id,title])=>`<a class="nav-link ${id===pageId()?'active':''}" href="#/${id}">${esc(title)}</a>`).join('')}`).join('')}
+-function render(){const d=docs[lang];const id=pageId();const p=d.pages[id]||d.pages.start;document.documentElement.lang=lang;document.title=`${p.title} · KnotRoute Docs`;$('#content').innerHTML=`<section class="hero"><div class="eyebrow">${esc(p.tag)}</div><h1>${esc(p.title)}</h1><div class="lead">${esc(p.lead)}</div></section>${p.html}`;$('#crumb').textContent=`KnotRoute / ${p.title}`;$('#lang').textContent=$('#langTop').textContent=lang==='ru'?'RU / EN':'EN / RU';renderNav();window.scrollTo(0,0);$('.sidebar').classList.remove('open')}
+-function toggleLang(){lang=lang==='ru'?'en':'ru';localStorage.knotDocsLang=lang;render()}
+-function search(q){q=q.trim().toLowerCase();const panel=$('#searchPanel');if(q.length<2){panel.classList.add('hidden');return}const d=docs[lang];const results=Object.entries(d.pages).map(([id,p])=>({id,p,text:(p.title+' '+p.lead+' '+p.html.replace(/<[^>]+>/g,' ')).toLowerCase()})).filter(x=>x.text.includes(q)).slice(0,12);panel.innerHTML=results.length?results.map(x=>`<a class="search-result" href="#/${x.id}"><strong>${esc(x.p.title)}</strong><small>${esc(x.p.lead)}</small></a>`).join(''):`<div class="search-result">${lang==='ru'?'Ничего не найдено':'No results'}</div>`;panel.classList.remove('hidden')}
+-window.addEventListener('hashchange',render);$('#lang').onclick=$('#langTop').onclick=toggleLang;$('#menu').onclick=()=>$('.sidebar').classList.toggle('open');$('#search').addEventListener('input',e=>search(e.target.value));$('#searchPanel').addEventListener('click',()=>$('#searchPanel').classList.add('hidden'));document.addEventListener('keydown',e=>{if(e.key==='/'&&document.activeElement.tagName!=='INPUT'){e.preventDefault();$('#search').focus()}if(e.key==='Escape'){$('#searchPanel').classList.add('hidden');$('.sidebar').classList.remove('open')}});render();
+diff --git a/internal/ops/docsite/site/content.js b/internal/ops/docsite/site/content.js
+deleted file mode 100644
+index f6056d3..0000000
+--- a/internal/ops/docsite/site/content.js
++++ /dev/null
+@@ -1,174 +0,0 @@
+-window.KNOT_DOCS={
+-ru:{groups:[
+-{title:'Начало',pages:[['start','С чего начать'],['concepts','Как устроен KnotRoute'],['install','Установка клиента']]},
+-{title:'Клиенты',pages:[['windows','Windows'],['android','Android'],['client-troubleshooting','Проблемы подключения']]},
+-{title:'Публикация',pages:[['publish-docker','Docker-сайт'],['traefik','Сайт вместе с Traefik'],['service-identity','Service identity и перенос']]},
+-{title:'Инфраструктура',pages:[['self-hosted','Полное self-hosted развёртывание'],['beacon','Beacon + bootstrap relay'],['relay','Relay'],['control','KnotRoute Control'],['agent','KnotRoute Agent']]},
+-{title:'Разработка',pages:[['sdk','Client SDK'],['server-sdk','Server SDK']]},
+-{title:'Безопасность',pages:[['security','Модель безопасности'],['backup','Резервные копии и восстановление']]}
+-],pages:{
+-start:{tag:'START HERE',title:'KnotRoute без боли',lead:'Выберите, что именно вы хотите сделать. Документация начинается с задач и готовых конфигураций, а не с устройства протокола.',html:`<div class="quick-grid"><a class="quick-card" href="#/windows"><strong>Открыть .knot-сайт</strong><span>Windows-клиент, системная интеграция, локальный CA.</span></a><a class="quick-card" href="#/android"><strong>Подключиться с Android</strong><span>Профиль сети, QR/deep link, встроенный браузер.</span></a><a class="quick-card" href="#/publish-docker"><strong>Опубликовать Docker-сервис</strong><span>Sidecar рядом с существующим контейнером, без публичного порта.</span></a><a class="quick-card" href="#/self-hosted"><strong>Развернуть свою сеть</strong><span>Network ID, Beacon, relay, Control и Agent.</span></a></div><div class="callout"><strong>KnotRoute</strong> — encrypted overlay для сервисов с собственными <code>.knot</code>-идентичностями. Обычный Интернет используется как транспорт между узлами.</div><h2>Самый короткий путь</h2><div class="steps"><div class="step"><h3>Получите профиль сети</h3><p>Network ID + Beacon URL. KnotRoute Control умеет выдавать QR и инструкции.</p></div><div class="step"><h3>Запустите клиент</h3><p>Desktop/Android либо встройте SDK в приложение.</p></div><div class="step"><h3>Откройте сервис</h3><p>Используйте canonical <code>…​.knot</code> address или локальный alias.</p></div></div>`},
+-concepts:{tag:'CONCEPTS',title:'Как устроен KnotRoute',lead:'Минимум терминов, которые полезно понимать при эксплуатации.',html:`<h2>Сеть и узлы</h2><p><code>network_id</code> разделяет независимые overlay-сети. Это идентификатор пространства, а не пароль членства.</p><h2>Service identity</h2><p>Опубликованный сервис имеет собственный Ed25519 identity и стабильный canonical <code>.knot</code>-адрес. Его можно переносить между хостами, сохраняя identity-файл.</p><h2>Discovery</h2><p>Узлы могут находить друг друга через Beacon, LAN multicast, PEX, peer cache и static seeds. Beacon не является каталогом сайтов.</p><h2>Circuits и rendezvous</h2><p>Клиент строит multi-hop circuit, сервис держит introduction points, а соединение встречается на rendezvous. Payload дополнительно защищён end-to-end.</p><div class="callout warn"><strong>Важно:</strong> v3 не следует позиционировать как Tor-equivalent anonymity. Timing correlation, Sybil и глобальный пассивный противник требуют отдельного исследования и аудита.</div>`},
+-install:{tag:'CLIENT',title:'Установка клиента',lead:'Desktop-клиент нужен только приложениям, которые сами не встраивают KnotRoute SDK.',html:`<h2>Windows</h2><pre><code>powershell -ExecutionPolicy Bypass -File .\\Install-KnotRoute.ps1</code></pre><p>Запускайте <code>knotroute-desktop.exe</code>. Он управляет daemon, tray, dashboard, proxy/PAC и локальным CA.</p><h2>Linux/macOS</h2><pre><code>knotroute init --config knotroute.json
+-knotroute doctor --config knotroute.json --probe
+-knotroute run --config knotroute.json</code></pre><p>Для браузеров укажите KnotRoute SOCKS5/HTTP proxy либо используйте системную интеграцию платформы.</p>`},
+-windows:{tag:'WINDOWS',title:'Windows: подключение и браузер',lead:'Нормальный пользовательский сценарий — tray-приложение, без TUN-интерфейса.',html:`<div class="steps"><div class="step"><h3>Установите и запустите</h3><p>Откройте <code>knotroute-desktop.exe</code>.</p></div><div class="step"><h3>Импортируйте параметры сети</h3><p>Задайте Network ID и Beacon URLs либо импортируйте invitation/profile.</p></div><div class="step"><h3>Включите .knot integration</h3><p>Tray установит локальный CA текущего пользователя и PAC, который отправляет только <code>.knot</code> в локальный proxy.</p></div><div class="step"><h3>Откройте сайт</h3><p><code>https://&lt;service-identity&gt;.knot/</code></p></div></div><h2>Совместимость с VPN/TUN</h2><p>В стандартном режиме KnotRoute не создаёт TUN. Обычные хосты возвращаются PAC как <code>DIRECT</code> и дальше следуют обычной таблице маршрутов ОС.</p><h2>Диагностика</h2><pre><code>knotroute doctor --config knotroute.json --probe
+-knotroute address --config knotroute.json</code></pre>`},
+-android:{tag:'ANDROID',title:'Android',lead:'Android-клиент содержит KnotRoute core внутри APK и не требует отдельного VPN/TUN.',html:`<div class="steps"><div class="step"><h3>Добавьте сеть</h3><p>Откройте <code>knotroute://join</code> deep link из QR или заполните Network ID/Beacon вручную.</p></div><div class="step"><h3>Подключитесь</h3><p>Foreground service поддерживает overlay, пока клиент включён.</p></div><div class="step"><h3>Для HTTPS установите локальный CA</h3><p>Приложение открывает штатный Android certificate installer и никогда не обходит TLS error.</p></div><div class="step"><h3>Используйте Browser</h3><p>WebView получает process-local KnotRoute proxy.</p></div></div><h2>Приложения без standalone-клиента</h2><p>Используйте AAR из release. Ваше приложение может поднять embedded KnotRoute core и локальный forward самостоятельно.</p>`},
+-'client-troubleshooting':{tag:'TROUBLESHOOTING',title:'Клиент не подключается',lead:'Проверяйте цепочку от network profile до конкретного сервиса.',html:`<h2>Нет peers</h2><ol><li>Сверьте <code>network_id</code>.</li><li>Проверьте доступность HTTPS Beacon.</li><li>Проверьте TCP endpoint bootstrap relay.</li><li>Запустите <code>doctor --probe</code>.</li></ol><h2>.knot не открывается</h2><ol><li>Убедитесь, что proxy/PAC реально используется приложением.</li><li>Для SOCKS включите remote DNS.</li><li>Проверьте, что descriptor сервиса успел распространиться.</li></ol><h2>TLS error</h2><p>Не нажимайте «продолжить». Переустановите local KnotRoute CA и проверьте trust store браузера.</p>`},
+-'publish-docker':{tag:'PUBLISH',title:'Опубликовать Docker-сайт',lead:'Самый простой production-сценарий: sidecar подключается к той же Docker network, что и приложение.',html:`<pre><code>services:
+-  app:
+-    image: your/app:latest
+-    networks: [private]
+-
+-  knotroute:
+-    image: ghcr.io/localzet/knotroute-sidecar:3.1.0
+-    restart: unless-stopped
+-    networks: [private]
+-    volumes:
+-      - knotroute-data:/data
+-    environment:
+-      KNOTROUTE_NETWORK_ID: "kn_..."
+-      KNOTROUTE_BEACONS: "https://beacon-a.example,https://beacon-b.example"
+-      KNOTROUTE_SERVICE_NAME: "web"
+-      KNOTROUTE_SERVICE_TARGET: "app:8080"
+-
+-networks:
+-  private:
+-volumes:
+-  knotroute-data:</code></pre><div class="callout"><strong>Не удаляйте volume.</strong> В <code>/data</code> хранится service identity. Потеря identity = новый canonical <code>.knot</code>-адрес.</div><p>Приложению не нужен host <code>ports:</code>, если оно доступно только через KnotRoute.</p>`},
+-traefik:{tag:'DOCKER',title:'Публичный Traefik + приватный KnotRoute',lead:'Один контейнер может быть одновременно доступен через обычный домен и через .knot.',html:`<pre><code>Internet -> Traefik -> app:8080
+-                       ^
+-                       |
+-KnotRoute -> sidecar --+</code></pre><p>Подключите приложение к публичной Traefik network и к отдельной private network с sidecar. Sidecar целится в <code>app:8080</code>; Traefik продолжает работать независимо.</p><p>Для hidden-only сервиса не подключайте приложение к Traefik network вообще.</p>`},
+-'service-identity':{tag:'IDENTITY',title:'Service identity и перенос сервиса',lead:'Адрес принадлежит сервису, а не машине.',html:`<h2>Что сохранять</h2><p>Service identity file под persistent <code>/data</code>. Именно его публичный ключ определяет canonical address.</p><h2>Миграция</h2><ol><li>Остановите старый publisher.</li><li>Безопасно перенесите service identity.</li><li>Запустите sidecar на новом сервере с новым target.</li><li>Дождитесь новой revision descriptor.</li><li>Проверьте, что canonical address не изменился.</li></ol>`},
+-'self-hosted':{tag:'SELF-HOSTED',title:'Полное self-hosted развёртывание',lead:'Рекомендуемая схема: несколько Beacon/relay + Control + Agent на управляемых Docker-хостах.',html:`<pre><code>                    KnotRoute Control
+-                         ^
+-                         | outbound signed polling
+-              +----------+----------+
+-              |                     |
+-          Agent A                 Agent B
+-             |                       |
+-      Beacon + relay            sidecars
+-             |                       |
+-             +------ overlay --------+</code></pre><div class="steps"><div class="step"><h3>Создайте Network ID</h3><p><code>knotroute network create</code> и сохраните значение.</p></div><div class="step"><h3>Поднимите Control</h3><p>Панель хранит inventory и deployment jobs, но не участвует в маршрутизации.</p></div><div class="step"><h3>Подключите Agents</h3><p>Agents инициируют исходящие HTTPS-запросы к Control и подписывают их Ed25519.</p></div><div class="step"><h3>Разверните 2+ Beacon</h3><p>На разных failure domains. Control поставит job нужному agent.</p></div><div class="step"><h3>Публикуйте sidecars</h3><p>Выберите server, Docker network и target. Persistent identity volume обязателен.</p></div><div class="step"><h3>Генерируйте onboarding</h3><p>Windows/Android/Linux/Docker/Go инструкции и QR из одной панели.</p></div></div><h2>Минимальный compose Control</h2><pre><code>services:
+-  control:
+-    image: ghcr.io/localzet/knotroute-control:3.1.0
+-    restart: unless-stopped
+-    environment:
+-      KNOTROUTE_CONTROL_ADMIN_PASSWORD: "change-me"
+-      KNOTROUTE_CONTROL_ENROLL_TOKEN: "long-random-token"
+-    volumes:
+-      - control-data:/data
+-    expose: ["8080"]
+-volumes:
+-  control-data:</code></pre>`},
+-beacon:{tag:'DISCOVERY',title:'Beacon + bootstrap relay',lead:'Beacon даёт peer candidates, bundled relay — первый TCP edge в overlay.',html:`<p>HTTP Beacon следует публиковать через HTTPS reverse proxy. Relay <code>:7447/tcp</code> — raw TCP endpoint.</p><pre><code>KNOTROUTE_NETWORK_ID=kn_...
+-KNOTROUTE_BEACON_LISTEN=0.0.0.0:8080
+-KNOTROUTE_BEACON_RELAY=true
+-KNOTROUTE_BEACON_RELAY_LISTEN=0.0.0.0:7447
+-KNOTROUTE_BEACON_RELAY_ADVERTISE=relay.example.net:7447</code></pre><p>Beacon не знает список <code>.knot</code>-сервисов и не становится naming authority.</p>`},
+-relay:{tag:'ROUTING',title:'Relay',lead:'Always-on relay повышает связность, path diversity и доступность directory/rendezvous.',html:`<p>Для входящих peers откройте <code>7447/tcp</code> и задайте реальный <code>advertise</code>. Client-only узлы могут быть outbound-only.</p><p>Для устойчивой независимой сети имеет смысл держать несколько relay на независимых хостах/провайдерах.</p>`},
+-control:{tag:'OPERATIONS',title:'KnotRoute Control',lead:'Web control plane для inventory, deployment, onboarding и наблюдаемости. Не является частью overlay data plane.',html:`<h2>Что умеет</h2><ul><li>Network profiles;</li><li>agent inventory и heartbeat;</li><li>Beacon/sidecar deployment jobs;</li><li>restart/remove только managed components;</li><li>генератор подключения и QR;</li><li>RU/EN интерфейс.</li></ul><h2>Безопасность</h2><p>Веб-панель требует admin password, использует HttpOnly SameSite session cookie, same-origin checks и security headers. Размещайте её за HTTPS reverse proxy.</p>`},
+-agent:{tag:'OPERATIONS',title:'KnotRoute Agent',lead:'Минимальный server-side executor. Он сам инициирует connection к Control.',html:`<p>При первом запуске agent генерирует Ed25519 identity и использует одноразовый/ограниченно распространяемый enrollment token. Дальнейшие heartbeat/jobs подписываются identity.</p><pre><code>services:
+-  agent:
+-    image: ghcr.io/localzet/knotroute-agent:3.1.0
+-    restart: unless-stopped
+-    environment:
+-      KNOTROUTE_CONTROL_URL: https://control.example.net
+-      KNOTROUTE_CONTROL_ENROLL_TOKEN: "..."
+-      KNOTROUTE_AGENT_DOCKER: "true"
+-    volumes:
+-      - agent-data:/data
+-      - /var/run/docker.sock:/var/run/docker.sock</code></pre><div class="callout warn"><strong>Docker socket — host-admin capability.</strong> Монтируйте его только в Agent, никогда не в Control. Agent ограничивает операции managed labels/stacks, но сам по себе остаётся высокопривилегированным компонентом.</div>`},
+-sdk:{tag:'DEVELOPMENT',title:'Client SDK',lead:'Standalone KnotRoute не обязателен: приложение может включать core непосредственно.',html:`<pre><code>client, err := knotclient.New(knotclient.Options{
+-    DataDir:     "./knot-data",
+-    NetworkID:   "kn_...",
+-    Beacons:     []string{"https://beacon.example"},
+-    CircuitHops: 3,
+-})
+-client.Start(ctx)
+-conn, err := client.Dial(ctx, "... .knot")</code></pre><p>Android release содержит AAR с gomobile binding.</p>`},
+-'server-sdk':{tag:'DEVELOPMENT',title:'Server SDK',lead:'Нативное приложение может публиковать handler как service identity без внешнего nginx.',html:`<p>Используйте server SDK для in-process TCP/RPC handlers и persistent service identity. Для существующих контейнеров sidecar обычно проще.</p>`},
+-security:{tag:'SECURITY',title:'Модель безопасности',lead:'Что защищает KnotRoute и чего он сознательно не обещает.',html:`<h2>Защищает</h2><ul><li>direct-link TLS и identity authentication;</li><li>multi-hop circuit encryption;</li><li>service identity authentication;</li><li>end-to-end rendezvous payload encryption;</li><li>signed expiring descriptors.</li></ul><h2>Не является</h2><ul><li>гарантией anonymity уровня Tor;</li><li>network-wide membership PKI;</li><li>заменой authentication внутри приложения;</li><li>защитой от endpoint compromise, global traffic correlation и DoS.</li></ul><p><code>network_id</code> — namespace/isolation identifier, не пароль.</p>`},
+-backup:{tag:'OPERATIONS',title:'Backup и восстановление',lead:'Ключи важнее контейнеров.',html:`<table><thead><tr><th>Что</th><th>Почему</th></tr></thead><tbody><tr><td>Service identity</td><td>Определяет canonical .knot address.</td></tr><tr><td>Node identity</td><td>Нужна для continuity node ID.</td></tr><tr><td>Control /data</td><td>Inventory, jobs, network profiles.</td></tr><tr><td>Agent /data</td><td>Agent identity и managed compose stacks.</td></tr></tbody></table><p>Не делайте <code>docker compose down -v</code> для production sidecar без осознанного удаления identity.</p>`}
+-}},
+-en:{groups:[
+-{title:'Start',pages:[['start','Start here'],['concepts','How KnotRoute works'],['install','Install a client']]},
+-{title:'Clients',pages:[['windows','Windows'],['android','Android'],['client-troubleshooting','Troubleshooting']]},
+-{title:'Publishing',pages:[['publish-docker','Docker service'],['traefik','Traefik + KnotRoute'],['service-identity','Service identity & migration']]},
+-{title:'Infrastructure',pages:[['self-hosted','Full self-hosted deployment'],['beacon','Beacon + bootstrap relay'],['relay','Relay'],['control','KnotRoute Control'],['agent','KnotRoute Agent']]},
+-{title:'Development',pages:[['sdk','Client SDK'],['server-sdk','Server SDK']]},
+-{title:'Security',pages:[['security','Security model'],['backup','Backup & recovery']]}
+-],pages:{}}
+-};
+-// English pages deliberately mirror the operational structure while keeping the shipped bundle compact.
+-for(const [id,p] of Object.entries(window.KNOT_DOCS.ru.pages)){window.KNOT_DOCS.en.pages[id]={...p,tag:p.tag,title:({start:'KnotRoute without the pain',concepts:'How KnotRoute works',install:'Install a client',windows:'Windows: connect and browse',android:'Android', 'client-troubleshooting':'Client troubleshooting','publish-docker':'Publish a Docker service',traefik:'Public Traefik + private KnotRoute','service-identity':'Service identity and migration','self-hosted':'Full self-hosted deployment',beacon:'Beacon + bootstrap relay',relay:'Relay',control:'KnotRoute Control',agent:'KnotRoute Agent',sdk:'Client SDK','server-sdk':'Server SDK',security:'Security model',backup:'Backup and recovery'})[id]||p.title,lead:p.lead,html:p.html};}
+-Object.assign(window.KNOT_DOCS.en.pages, {
+-start:{tag:'START HERE',title:'KnotRoute without the pain',lead:'Choose the task you need to complete. These docs start with deployable workflows instead of protocol internals.',html:`<div class="quick-grid"><a class="quick-card" href="#/windows"><strong>Open a .knot site</strong><span>Windows client, system integration and local CA.</span></a><a class="quick-card" href="#/android"><strong>Connect from Android</strong><span>Network profile, QR/deep link and built-in browser.</span></a><a class="quick-card" href="#/publish-docker"><strong>Publish a Docker service</strong><span>Run a sidecar next to an existing container without exposing its private port.</span></a><a class="quick-card" href="#/self-hosted"><strong>Deploy your own network</strong><span>Network ID, Beacons, relays, Control and Agents.</span></a></div><div class="callout"><strong>KnotRoute</strong> is an encrypted service overlay with self-authenticating <code>.knot</code> identities. The ordinary Internet is only the transport between nodes.</div><h2>Shortest path</h2><div class="steps"><div class="step"><h3>Get a network profile</h3><p>Network ID plus Beacon URLs. KnotRoute Control can generate a QR/deep link.</p></div><div class="step"><h3>Start a client</h3><p>Use desktop/Android or embed the SDK.</p></div><div class="step"><h3>Open a service</h3><p>Use its canonical <code>…​.knot</code> address or a local alias.</p></div></div>`},
+-concepts:{tag:'CONCEPTS',title:'How KnotRoute works',lead:'The minimum set of concepts useful for operating the network.',html:`<h2>Networks and nodes</h2><p><code>network_id</code> separates independent overlays. It is a namespace identifier, not a membership password.</p><h2>Service identities</h2><p>A published service owns an independent Ed25519 identity and stable canonical <code>.knot</code> address. Move the identity file with the service to keep the address.</p><h2>Discovery</h2><p>Nodes can learn peers through Beacons, LAN multicast, PEX, persistent cache and static seeds. A Beacon is not a site directory.</p><h2>Circuits and rendezvous</h2><p>Clients build multi-hop circuits, services maintain introduction points and both sides meet at a rendezvous node. The service payload has a separate end-to-end protection layer.</p><div class="callout warn"><strong>Important:</strong> do not market v3/v3.1 as Tor-equivalent anonymity. Timing correlation, Sybil resistance and global-adversary analysis require independent research and audit.</div>`},
+-install:{tag:'CLIENT',title:'Install a client',lead:'The standalone client is needed only when the application does not embed the KnotRoute SDK itself.',html:`<h2>Windows</h2><pre><code>powershell -ExecutionPolicy Bypass -File .\\Install-KnotRoute.ps1</code></pre><p>Launch <code>knotroute-desktop.exe</code>. It controls the daemon, tray, dashboard, local proxies/PAC and the per-device CA.</p><h2>Linux/macOS</h2><pre><code>knotroute init --config knotroute.json
+-knotroute doctor --config knotroute.json --probe
+-knotroute run --config knotroute.json</code></pre>`},
+-windows:{tag:'WINDOWS',title:'Windows: connect and browse',lead:'Normal interactive use is the tray application; KnotRoute does not need a TUN adapter by default.',html:`<div class="steps"><div class="step"><h3>Install and start</h3><p>Run <code>knotroute-desktop.exe</code>.</p></div><div class="step"><h3>Import network settings</h3><p>Set the Network ID and Beacon URLs or import a profile.</p></div><div class="step"><h3>Enable .knot integration</h3><p>The tray installs the current user's local CA and a PAC that routes only <code>.knot</code> web traffic to KnotRoute.</p></div><div class="step"><h3>Open the service</h3><p><code>https://&lt;service-identity&gt;.knot/</code></p></div></div><h2>VPN coexistence</h2><p>Ordinary hosts are <code>DIRECT</code> from KnotRoute's PAC and continue through the operating system's routing stack.</p>`},
+-android:{tag:'ANDROID',title:'Android',lead:'The Android app embeds the KnotRoute core directly and does not require VpnService/TUN.',html:`<div class="steps"><div class="step"><h3>Add a network</h3><p>Open a <code>knotroute://join</code> QR/deep link or enter the Network ID and Beacons manually.</p></div><div class="step"><h3>Connect</h3><p>A foreground service keeps the overlay core running.</p></div><div class="step"><h3>Install the local CA for HTTPS</h3><p>The app opens Android's system certificate installer and never bypasses TLS errors.</p></div><div class="step"><h3>Use Browser</h3><p>The built-in WebView receives a process-local KnotRoute proxy.</p></div></div>`},
+-'client-troubleshooting':{tag:'TROUBLESHOOTING',title:'Client troubleshooting',lead:'Check the path from network profile to the target service.',html:`<h2>No peers</h2><ol><li>Verify <code>network_id</code>.</li><li>Check the HTTPS Beacon endpoint.</li><li>Check the bootstrap relay TCP endpoint.</li><li>Run <code>doctor --probe</code>.</li></ol><h2>.knot does not open</h2><ol><li>Confirm the application actually uses KnotRoute proxy/PAC.</li><li>Enable remote DNS for SOCKS clients.</li><li>Allow time for the service descriptor to propagate.</li></ol><h2>TLS error</h2><p>Do not click through it. Reinstall the local KnotRoute CA and verify the browser trust store.</p>`},
+-'publish-docker':{tag:'PUBLISH',title:'Publish a Docker service',lead:'Run a KnotRoute sidecar on the same Docker network as the application.',html:`<pre><code>services:
+-  app:
+-    image: your/app:latest
+-    networks: [private]
+-  knotroute:
+-    image: ghcr.io/localzet/knotroute-sidecar:3.1.0
+-    restart: unless-stopped
+-    networks: [private]
+-    volumes: [knotroute-data:/data]
+-    environment:
+-      KNOTROUTE_NETWORK_ID: "kn_..."
+-      KNOTROUTE_BEACONS: "https://beacon-a.example,https://beacon-b.example"
+-      KNOTROUTE_SERVICE_NAME: "web"
+-      KNOTROUTE_SERVICE_TARGET: "app:8080"
+-networks: { private: {} }
+-volumes: { knotroute-data: {} }</code></pre><div class="callout"><strong>Keep the volume.</strong> <code>/data</code> contains the service identity. Losing it changes the canonical <code>.knot</code> address.</div>`},
+-traefik:{tag:'DOCKER',title:'Public Traefik + private KnotRoute',lead:'The same application can have a normal public hostname and an independent .knot identity.',html:`<pre><code>Internet -> Traefik -> app:8080
+-                       ^
+-                       |
+-KnotRoute -> sidecar --+</code></pre><p>Attach the application to its normal reverse-proxy network and to a separate private network shared with the KnotRoute sidecar. Hidden-only applications do not need the public network at all.</p>`},
+-'service-identity':{tag:'IDENTITY',title:'Service identity and migration',lead:'The address belongs to the service rather than the machine.',html:`<h2>Keep the identity</h2><p>The service identity under persistent <code>/data</code> determines the canonical address.</p><h2>Move the service</h2><ol><li>Stop the old publisher.</li><li>Move the service identity securely.</li><li>Start the publisher on the new host with the new local target.</li><li>Wait for the new signed descriptor revision.</li><li>Confirm the canonical address is unchanged.</li></ol>`},
+-'self-hosted':{tag:'SELF-HOSTED',title:'Full self-hosted deployment',lead:'Recommended layout: multiple Beacon/relay nodes plus Control and outbound Agents on managed Docker hosts.',html:`<pre><code>                    KnotRoute Control
+-                         ^
+-                         | signed outbound polling
+-              +----------+----------+
+-              |                     |
+-          Agent A                 Agent B
+-             |                       |
+-      Beacon + relay            sidecars
+-             |                       |
+-             +------ overlay --------+</code></pre><div class="steps"><div class="step"><h3>Create a Network ID</h3><p>Run <code>knotroute network create</code>.</p></div><div class="step"><h3>Deploy Control</h3><p>Control manages inventory and jobs but is not part of the data plane.</p></div><div class="step"><h3>Enroll Agents</h3><p>Agents make outbound HTTPS requests and sign them with Ed25519.</p></div><div class="step"><h3>Deploy 2+ Beacons</h3><p>Use different failure domains.</p></div><div class="step"><h3>Publish sidecars</h3><p>Select the server, Docker network and target.</p></div><div class="step"><h3>Generate onboarding</h3><p>Share platform-specific steps and a QR/deep link.</p></div></div>`},
+-beacon:{tag:'DISCOVERY',title:'Beacon + bootstrap relay',lead:'The Beacon returns peer candidates; the bundled relay provides the first raw TCP overlay edge.',html:`<p>Publish the HTTP Beacon through an HTTPS reverse proxy. Expose relay <code>:7447/tcp</code> as raw TCP.</p><pre><code>KNOTROUTE_NETWORK_ID=kn_...
+-KNOTROUTE_BEACON_LISTEN=0.0.0.0:8080
+-KNOTROUTE_BEACON_RELAY=true
+-KNOTROUTE_BEACON_RELAY_LISTEN=0.0.0.0:7447
+-KNOTROUTE_BEACON_RELAY_ADVERTISE=relay.example.net:7447</code></pre><p>The Beacon is neither a service directory nor a naming authority.</p>`},
+-relay:{tag:'ROUTING',title:'Relay',lead:'Always-on relays improve connectivity, directory availability and path diversity.',html:`<p>For inbound peers expose <code>7447/tcp</code> and configure a reachable <code>advertise</code> endpoint. Client-only nodes can remain outbound-only.</p>`},
+-control:{tag:'OPERATIONS',title:'KnotRoute Control',lead:'Optional web control plane for inventory, deployments and onboarding. It is not part of overlay routing.',html:`<h2>Features</h2><ul><li>network profiles;</li><li>Agent inventory and health;</li><li>Beacon/sidecar deployment jobs;</li><li>restart/remove for managed components only;</li><li>onboarding and QR generation;</li><li>RU/EN UI.</li></ul><h2>Security</h2><p>Control requires an admin password, uses HttpOnly SameSite sessions, same-origin checks and browser security headers. Place it behind HTTPS.</p>`},
+-agent:{tag:'OPERATIONS',title:'KnotRoute Agent',lead:'Small server-side executor that initiates outbound connections to Control.',html:`<p>On first start the Agent generates an Ed25519 identity. Enrollment uses a separate token; subsequent requests are signed.</p><pre><code>agent:
+-  image: ghcr.io/localzet/knotroute-agent:3.1.0
+-  environment:
+-    KNOTROUTE_CONTROL_URL: https://control.example.net
+-    KNOTROUTE_CONTROL_ENROLL_TOKEN: "..."
+-    KNOTROUTE_AGENT_DOCKER: "true"
+-  volumes:
+-    - agent-data:/data
+-    - /var/run/docker.sock:/var/run/docker.sock</code></pre><div class="callout warn"><strong>Docker socket is host-admin capability.</strong> Mount it only into Agent, never into Control.</div>`},
+-sdk:{tag:'DEVELOPMENT',title:'Client SDK',lead:'Applications can embed KnotRoute and work without a separately installed client.',html:`<pre><code>client, err := knotclient.New(knotclient.Options{
+-    DataDir: "./knot-data",
+-    NetworkID: "kn_...",
+-    Beacons: []string{"https://beacon.example"},
+-    CircuitHops: 3,
+-})
+-client.Start(ctx)
+-conn, err := client.Dial(ctx, "... .knot")</code></pre><p>Android releases include the gomobile AAR binding.</p>`},
+-'server-sdk':{tag:'DEVELOPMENT',title:'Server SDK',lead:'Native applications can publish in-process handlers under a stable service identity.',html:`<p>Use the server SDK for embedded TCP/RPC handlers. For existing containers, a sidecar is usually simpler.</p>`},
+-security:{tag:'SECURITY',title:'Security model',lead:'What KnotRoute protects and what it deliberately does not claim.',html:`<h2>Provides</h2><ul><li>authenticated direct-link encryption;</li><li>multi-hop circuit encryption;</li><li>service identity authentication;</li><li>end-to-end rendezvous payload encryption;</li><li>signed expiring service descriptors.</li></ul><h2>Does not provide</h2><ul><li>Tor-equivalent anonymity guarantees;</li><li>network-wide membership PKI;</li><li>application authentication;</li><li>protection from endpoint compromise, global correlation or denial of service.</li></ul>`},
+-backup:{tag:'OPERATIONS',title:'Backup and recovery',lead:'Keys matter more than containers.',html:`<table><thead><tr><th>Data</th><th>Why</th></tr></thead><tbody><tr><td>Service identity</td><td>Determines canonical .knot address.</td></tr><tr><td>Node identity</td><td>Preserves node ID continuity.</td></tr><tr><td>Control /data</td><td>Inventory, jobs and network profiles.</td></tr><tr><td>Agent /data</td><td>Agent identity and managed compose stacks.</td></tr></tbody></table>`}
+-});
+diff --git a/internal/ops/docsite/site/index.html b/internal/ops/docsite/site/index.html
+deleted file mode 100644
+index ea1b97e..0000000
+--- a/internal/ops/docsite/site/index.html
++++ /dev/null
+@@ -1,24 +0,0 @@
+-<!doctype html>
+-<html lang="ru">
+-<head>
+-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0d1016">
+-<title>KnotRoute Docs</title><link rel="stylesheet" href="/style.css">
+-</head>
+-<body>
+-<div class="shell">
+-  <aside class="sidebar">
+-    <a class="brand" href="#/start"><span class="mark">K</span><span><strong>KnotRoute</strong><small>Documentation</small></span></a>
+-    <div class="search"><input id="search" placeholder="Поиск по документации…"><kbd>/</kbd></div>
+-    <nav id="nav"></nav>
+-    <div class="side-foot"><button id="lang">RU / EN</button><a href="https://github.com/localzet/knotroute" rel="noreferrer">GitHub ↗</a></div>
+-  </aside>
+-  <main>
+-    <header class="top"><button id="menu">☰</button><div class="crumb" id="crumb">KnotRoute / Docs</div><div class="top-actions"><button id="langTop">RU / EN</button><a href="#/self-hosted">Self-hosted</a></div></header>
+-    <article id="content"></article>
+-    <footer><span>KnotRoute Documentation</span><span>Self-hosted · RU/EN · no external runtime dependencies</span></footer>
+-  </main>
+-</div>
+-<div id="searchPanel" class="search-panel hidden"></div>
+-<script src="/content.js"></script><script src="/app.js"></script>
+-</body>
+-</html>
+diff --git a/internal/ops/docsite/site/style.css b/internal/ops/docsite/site/style.css
+deleted file mode 100644
+index e4233fc..0000000
+--- a/internal/ops/docsite/site/style.css
++++ /dev/null
+@@ -1 +0,0 @@
+-:root{color-scheme:dark;--bg:#0b0e13;--surface:#11151c;--surface2:#171c24;--line:#28303c;--text:#edf1f7;--muted:#8d97a7;--accent:#8cffc1;--blue:#82adff;--code:#0a0d12;--radius:14px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 85% -20%,#1a2a33 0,transparent 42rem),var(--bg);color:var(--text)}a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}.shell{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:100vh}.sidebar{position:sticky;top:0;height:100vh;border-right:1px solid var(--line);background:rgba(12,15,20,.94);backdrop-filter:blur(18px);padding:22px 17px;overflow:auto}.brand{display:flex;align-items:center;gap:11px;color:var(--text);padding:0 7px 22px}.brand:hover{text-decoration:none}.brand span:last-child{display:grid}.brand small{font-size:10px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase}.mark{display:grid;place-items:center;width:39px;height:39px;border-radius:12px;background:linear-gradient(145deg,var(--accent),var(--blue));font-weight:900;color:#06110c;font-size:20px}.search{position:relative;margin-bottom:20px}.search input{width:100%;padding:10px 34px 10px 11px;border:1px solid var(--line);background:var(--surface2);border-radius:9px;color:var(--text);outline:none}.search input:focus{border-color:#607fa7}.search kbd{position:absolute;right:9px;top:9px;border:1px solid #36404e;border-radius:5px;color:var(--muted);font-size:10px;padding:2px 5px}nav{display:grid;gap:3px}.nav-group{margin:16px 8px 7px;color:#697588;font-size:10px;text-transform:uppercase;letter-spacing:.17em;font-weight:800}.nav-link{padding:8px 10px;border-radius:8px;color:#aeb6c3;font-size:14px}.nav-link:hover,.nav-link.active{background:var(--surface2);color:var(--text);text-decoration:none}.nav-link.active{color:var(--accent)}.side-foot{display:flex;gap:8px;margin:22px 7px 0;border-top:1px solid var(--line);padding-top:15px}.side-foot button,.side-foot a,.top-actions button,.top-actions a,#menu{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}.side-foot button:hover,.side-foot a:hover,.top-actions button:hover,.top-actions a:hover{color:var(--text)}main{min-width:0}.top{height:64px;position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(40,48,60,.85);background:rgba(11,14,19,.82);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:space-between;padding:0 40px}.crumb{color:var(--muted);font-size:13px}.top-actions{display:flex;gap:18px}.top-actions a{color:var(--muted)}#menu{display:none;font-size:20px}article{max-width:960px;margin:0 auto;padding:58px 52px 80px}.hero{border-bottom:1px solid var(--line);padding-bottom:32px;margin-bottom:34px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--accent);font-weight:800;text-transform:uppercase}.hero h1{font-size:48px;line-height:1.05;letter-spacing:-.035em;margin:10px 0 16px}.lead{font-size:19px;line-height:1.65;color:#b7c0cc;max-width:780px}.quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:26px 0}.quick-card{border:1px solid var(--line);background:linear-gradient(180deg,var(--surface2),var(--surface));border-radius:var(--radius);padding:18px;color:var(--text)}.quick-card:hover{border-color:#3d4b5e;text-decoration:none}.quick-card strong{display:block;margin-bottom:6px}.quick-card span{color:var(--muted);font-size:13px;line-height:1.5}h2{font-size:28px;margin:44px 0 16px;letter-spacing:-.02em}h3{font-size:19px;margin:30px 0 12px}p,li{line-height:1.72;color:#c4cbd4}ul,ol{padding-left:24px}code{font-family:"SFMono-Regular",Consolas,monospace;background:#171d26;color:#a9d1ff;border:1px solid #263140;border-radius:6px;padding:2px 5px}pre{position:relative;background:var(--code);border:1px solid var(--line);border-radius:12px;padding:17px;overflow:auto;line-height:1.55}pre code{background:none;border:0;padding:0;color:#d7e2ee}.callout{border:1px solid #30413b;background:rgba(140,255,193,.055);border-radius:12px;padding:14px 16px;margin:20px 0;color:#c8d7d1}.callout.warn{border-color:#4a4230;background:rgba(255,212,121,.05)}.callout strong{color:var(--accent)}.callout.warn strong{color:#ffd479}.steps{counter-reset:step;display:grid;gap:13px;margin:20px 0}.step{position:relative;padding:16px 18px 16px 55px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.step:before{counter-increment:step;content:counter(step);position:absolute;left:16px;top:15px;width:25px;height:25px;border-radius:8px;background:#20302b;color:var(--accent);display:grid;place-items:center;font-weight:800}.step h3{margin:0 0 5px;font-size:16px}.step p{margin:0;font-size:14px;color:var(--muted)}table{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:11px 9px;vertical-align:top}th{color:var(--muted);font-weight:600}.search-panel{position:fixed;z-index:30;top:74px;left:310px;width:min(650px,calc(100% - 340px));max-height:70vh;overflow:auto;background:#12171e;border:1px solid #384454;border-radius:14px;padding:8px;box-shadow:0 30px 80px #000}.search-panel.hidden{display:none}.search-result{display:block;padding:12px;border-radius:9px;color:var(--text)}.search-result:hover{background:#1a2029;text-decoration:none}.search-result small{display:block;color:var(--muted);margin-top:4px}footer{max-width:960px;margin:0 auto;border-top:1px solid var(--line);padding:25px 52px 45px;color:var(--muted);display:flex;justify-content:space-between;font-size:12px}@media(max-width:900px){.shell{grid-template-columns:1fr}.sidebar{position:fixed;z-index:20;left:-310px;width:290px;transition:.2s}.sidebar.open{left:0;box-shadow:20px 0 70px #000}.top{padding:0 20px}.top-actions{display:none}#menu{display:block}article{padding:40px 22px 70px}.hero h1{font-size:38px}.quick-grid{grid-template-columns:1fr}.search-panel{left:16px;right:16px;width:auto}footer{padding:22px;display:grid;gap:7px}}

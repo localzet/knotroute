@@ -1,0 +1,7 @@
+# Traefik + KnotRoute
+
+An application can be published through both an ordinary Traefik ingress and a KnotRoute sidecar:
+
+```text
+Internet ─► Traefik ─► app:8080 ◄─ KnotRoute sidecar ◄─ overlay
+```

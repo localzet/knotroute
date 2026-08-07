@@ -1,0 +1,38 @@
+# KnotRoute Control и Agent
+
+Control — опциональная веб-панель для networks, servers, Beacons, relays, services, jobs и onboarding.
+
+## Control
+
+```yaml
+services:
+  control:
+    image: ghcr.io/localzet/knotroute-control:latest
+    restart: unless-stopped
+    volumes:
+      - control-data:/data
+    environment:
+      KNOTROUTE_CONTROL_ADMIN_PASSWORD: ${KNOTROUTE_CONTROL_ADMIN_PASSWORD}
+      KNOTROUTE_CONTROL_ENROLL_TOKEN: ${KNOTROUTE_CONTROL_ENROLL_TOKEN}
+```
+
+Публикуйте Control только через HTTPS reverse proxy.
+
+## Agent
+
+Agent сам устанавливает исходящую HTTPS-связь с Control. Открывать management port на сервере не требуется.
+
+```yaml
+  agent:
+    image: ghcr.io/localzet/knotroute-agent:latest
+    restart: unless-stopped
+    volumes:
+      - agent-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      KNOTROUTE_CONTROL_URL: https://control.example.net
+      KNOTROUTE_AGENT_ENROLL_TOKEN: ${KNOTROUTE_CONTROL_ENROLL_TOKEN}
+      KNOTROUTE_AGENT_DOCKER: "true"
+```
+
+<Callout type="warning">Docker socket почти эквивалентен root-доступу к хосту. Монтируйте его только Agent'у, никогда Control.</Callout>

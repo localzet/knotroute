@@ -1,0 +1,14 @@
+# Android-клиент
+
+Android APK содержит KnotRoute core внутри приложения и не использует `VpnService`/TUN.
+
+## Подключение
+
+1. Откройте QR/deep-link `knotroute://join?...` из Control или создайте профиль вручную.
+2. Выберите профиль сети и запустите foreground service.
+3. Для HTTPS установите локальный CA через штатный Android certificate installer.
+4. Открывайте `.knot` в встроенном браузере.
+
+## Что в QR
+
+Только название профиля, `network_id` и Beacon URL. Приватных ключей там нет.

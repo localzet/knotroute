@@ -1,0 +1,27 @@
+# Self-hosted: общая схема
+
+Рекомендуемый первый production-layout:
+
+```text
+                  HTTPS                       TCP/7447
+clients ───────► Beacon A ─────────────────► Relay A
+   │             Beacon B ─────────────────► Relay B
+   │                    ╲                    ╱
+   └─────────────── encrypted overlay ──────┘
+                         │
+                    Sidecar / service
+
+Control ── management only ──► Agents ──► managed containers
+```
+
+## Минимальный порядок
+
+1. Создайте отдельный `network_id`.
+2. Разверните минимум два Beacon endpoint в разных failure domains.
+3. Держите несколько постоянно доступных relay-node.
+4. Установите Control за HTTPS.
+5. Подключите Agents на Docker-хостах.
+6. Публикуйте приложения sidecar-контейнерами.
+7. Выдавайте пользователям QR/инструкцию из Control.
+
+<Callout type="warning">`network_id` — namespace сети, а не пароль или membership certificate.</Callout>

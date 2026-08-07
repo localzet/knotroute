@@ -1,0 +1,36 @@
+{
+  "name": "knotroute-docs",
+  "version": "3.1.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "browserslist": "defaults, not ie <= 11",
+  "dependencies": {
+    "@headlessui/react": "^1.7.13",
+    "@mdx-js/loader": "^2.1.5",
+    "@mdx-js/react": "^2.1.5",
+    "@next/mdx": "^13.0.3",
+    "@tailwindcss/typography": "^0.5.8",
+    "autoprefixer": "^10.4.7",
+    "clsx": "^2.1.0",
+    "flexsearch": "^0.7.31",
+    "focus-visible": "^5.2.0",
+    "framer-motion": "7.8.1",
+    "next": "15.4.7",
+    "postcss": "^8.4.31",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "remark-gfm": "^3.0.1",
+    "tailwindcss": "^3.3.0"
+  },
+  "devDependencies": {
+    "eslint": "8.57.1",
+    "eslint-config-next": "15.4.7",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.8"
+  }
+}

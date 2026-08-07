@@ -1,0 +1,9 @@
+# Traefik + KnotRoute
+
+Один контейнер приложения может одновременно иметь публичный ingress и приватную публикацию через KnotRoute.
+
+```text
+Internet ─► Traefik ─► app:8080 ◄─ KnotRoute sidecar ◄─ overlay
+```
+
+Подключите приложение к двум сетям: существующей Traefik network и отдельной private network с sidecar. Sidecar обращается к внутреннему HTTP-порту приложения; публичный TLS и `.knot` browser TLS — разные слои.

@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html { background: #080b10; }
+body { margin: 0; background: #080b10; }
+::selection { background: rgba(103,239,160,.23); color: white; }
+.prose h1 { font-size: 2.55rem; letter-spacing: -.04em; }
+.prose h2 { margin-top: 2.4em; border-top: 1px solid #202938; padding-top: 1.4em; }
+.prose pre code { color: #d7e1ec; }

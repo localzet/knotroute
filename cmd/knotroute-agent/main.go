@@ -227,7 +227,7 @@ func (a *agent) deployBeacon(job ops.Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	image := "ghcr.io/localzet/knotroute-beacon:" + a.imageTag
+	image := "ghcr.io/localzet/knotroute-beacon:latest"
 	if v := optionalString(p, "image"); v != "" {
 		if !strings.HasPrefix(v, "ghcr.io/localzet/knotroute-beacon:") {
 			return "", errors.New("unsupported beacon image")

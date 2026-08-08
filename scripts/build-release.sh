@@ -2,7 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION="${VERSION:-dev}"
+VERSION="${VERSION:-$(cat "$ROOT/VERSION")}"
 OUT="${OUT:-dist}"
 case "$OUT" in
   /*) OUT_DIR="$OUT" ;;

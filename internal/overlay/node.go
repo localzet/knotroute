@@ -31,7 +31,7 @@ import (
 	"github.com/localzet/knotroute/internal/serviceid"
 )
 
-var Version = "dev"
+var Version = "3.1.0"
 
 type counters struct {
 	bytesSent, bytesReceived, framesSent, framesReceived atomic.Uint64

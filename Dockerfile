@@ -2,7 +2,7 @@
 FROM golang:1.25-alpine AS build
 RUN apk add --no-cache ca-certificates
 WORKDIR /src
-ARG VERSION=dev
+ARG VERSION=3.1.0
 COPY . .
 RUN CGO_ENABLED=0 go test ./... && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/localzet/knotroute/internal/overlay.Version=${VERSION}" -o /out/knotroute ./cmd/knotroute

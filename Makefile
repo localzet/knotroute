@@ -1,8 +1,8 @@
 BINARY := knotroute
-VERSION ?= 3.0.0
+VERSION ?= $(shell cat VERSION)
 LDFLAGS := -s -w -X github.com/localzet/knotroute/internal/overlay.Version=$(VERSION)
 
-.PHONY: all build beacon sidecar desktop service test race vet fmt clean ui release android
+.PHONY: all build beacon sidecar desktop service test race vet fmt clean ui release android check-version
 all: test build
 
 build:
@@ -20,7 +20,10 @@ desktop:
 service:
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$(LDFLAGS) -H=windowsgui" -o bin/knotroute-service.exe ./cmd/knotroute-service
 
-test:
+check-version:
+	sh ./scripts/check-version.sh
+
+test: check-version
 	go test ./...
 
 race:

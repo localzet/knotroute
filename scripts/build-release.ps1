@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$Version = if ($env:VERSION) { $env:VERSION } else { "dev" }
+$Version = if ($env:VERSION) { $env:VERSION } else { (Get-Content (Join-Path $Root "VERSION") -Raw).Trim() }
 $Out = if ($env:OUT) { $env:OUT } else { "dist" }
 $OutDir = if ([System.IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path $Root $Out }
 New-Item -ItemType Directory -Force $OutDir | Out-Null

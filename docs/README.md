@@ -15,6 +15,10 @@ This directory is organized by operational role. Start with the guide that match
 | Container operator | [Docker deployment](docker.md) | Sidecar and Beacon container details. |
 
 Before using KnotRoute for sensitive workloads, read [`SECURITY.md`](../SECURITY.md).
+## Release line
+
+- [KnotRoute v3.1](v3.1.md) — Product UX/stability release, upgrade notes, compatibility, and frozen v3 scope.
+
 
 ## Terminology
 

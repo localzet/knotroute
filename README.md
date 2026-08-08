@@ -1,5 +1,7 @@
 # KnotRoute
 
+> **v3.1.0** is the stabilized Product UX release for the v3 protocol line. See [docs/v3.1.md](docs/v3.1.md) for scope, upgrade notes, and compatibility.
+
 **KnotRoute is a self-hosted encrypted overlay network for private services, self-authenticating `.knot` names, onion-style circuits, rendezvous services, automatic peer discovery, desktop/Android clients, and embeddable application SDKs.**
 
 KnotRoute uses the ordinary Internet only as transport between participating nodes. Services do not need public DNS names or public HTTP ports, and the network has no exit-node mode into the public Internet.

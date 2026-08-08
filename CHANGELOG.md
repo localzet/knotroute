@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased — stabilization
+## 3.1.0 — Product UX and stabilization
 
+- Formalized the stabilized client/admin UX as the v3.1 release line with a single repository version source and CI consistency checks.
+- Added a local discovered-services catalog that clearly separates node-bound services from canonical service identities.
+- Completed `.knot` HTTPS interception for canonical service identities and `service.<node>.knot` browser URLs.
+- Hardened published-service descriptor lifecycle across sidecar restarts, stale introduction points, and topology changes.
 - Restored HTTP/SOCKS `.knot` proxy routing through the circuit API and added a local-service fast path for TCP and embedded `pipe://` services.
 - Added end-to-end Beacon auto-peering integration coverage and stricter Beacon HTTP API URL validation, including a clear rejection of relay port `7447`.
 - Made Control accept networks without a Beacon and treat already-running external Beacons as first-class infrastructure; added external Beacon health checks and a dedicated registration flow.

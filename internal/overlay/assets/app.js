@@ -59,13 +59,15 @@ function catalogEntries(s) {
     for (const route of s.routes) {
         for (const service of route.services) {
             const domain = nodeServiceDomain(service, route.domain);
-            if (seen.has(domain)) continue;
+            if (seen.has(domain))
+                continue;
             seen.add(domain);
             entries.push({ kind: "node", domain, title: service, description: `Сервис узла ${route.short_id || short(route.destination)} · ${route.hops} hop`, tags: ["node-service"], href: `http://${domain}/` });
         }
     }
     for (const item of s.known_services) {
-        if (!item.domain || seen.has(item.domain)) continue;
+        if (!item.domain || seen.has(item.domain))
+            continue;
         seen.add(item.domain);
         const metadata = asObject(item.metadata);
         const tags = String(metadata.tags || "").split(",").map(x => x.trim()).filter(Boolean);
@@ -87,7 +89,8 @@ function renderCatalog(s) {
     }
     root.className = "catalog-grid";
     root.innerHTML = filtered.map(x => `<article class="catalog-card"><div class="catalog-head"><strong>${esc(x.title)}</strong><span class="catalog-kind ${x.kind === "identity" ? "identity" : ""}">${x.kind === "identity" ? "service identity" : "узел"}</span></div><code>${esc(x.domain)}</code><p>${esc(x.description)}</p>${x.tags.length ? `<div class="catalog-meta">${x.tags.map(tag => `<span class="service-pill">${esc(tag)}</span>`).join("")}</div>` : ""}<div class="catalog-actions"><a class="button" href="${esc(x.href)}" target="_blank" rel="noreferrer">Открыть</a><button class="button ghost catalog-copy" type="button" data-domain="${esc(x.domain)}">Копировать адрес</button></div></article>`).join("");
-    for (const button of root.querySelectorAll(".catalog-copy")) button.addEventListener("click", async () => { await navigator.clipboard.writeText(button.dataset.domain || ""); const old = button.textContent; button.textContent = "Скопировано"; setTimeout(() => button.textContent = old, 1000); });
+    for (const button of root.querySelectorAll(".catalog-copy"))
+        button.addEventListener("click", async () => { await navigator.clipboard.writeText(button.dataset.domain || ""); const old = button.textContent; button.textContent = "Скопировано"; setTimeout(() => button.textContent = old, 1000); });
 }
 function renderPeers(items) {
     const root = byId("peers");
@@ -363,7 +366,8 @@ byId("addPeer").addEventListener("click", () => makeRow(byId("peerEditor"), [{ k
 byId("addService").addEventListener("click", () => makeRow(byId("serviceEditor"), [{ key: "name", label: "Имя", placeholder: "web", cls: "narrow" }, { key: "target", label: "Локальная цель", placeholder: "127.0.0.1:8080" }, { key: "publish", label: "Опубликовать identity", type: "checkbox", checked: true, cls: "narrow" }, { key: "intros", label: "Точек входа", type: "number", value: "3", cls: "narrow", advanced: true }, { key: "description", label: "Описание", advanced: true }, { key: "allow", label: "ACL узлов (прямой режим)", placeholder: "*", cls: "wide", advanced: true }]));
 byId("addForward").addEventListener("click", () => makeRow(byId("forwardEditor"), [{ key: "listen", label: "Локальный listener", placeholder: "127.0.0.1:2222" }, { key: "node", label: "ID удалённого узла", placeholder: "kr_…", cls: "wide" }, { key: "service", label: "Сервис", placeholder: "ssh", cls: "narrow" }]));
 byId("addAlias").addEventListener("click", () => makeRow(byId("aliasEditor"), [{ key: "name", label: "Алиас", placeholder: "server", cls: "narrow" }, { key: "node", label: "Целевой узел", placeholder: "kr_… or node.knot", cls: "wide" }, { key: "serviceId", label: "Целевой сервис", placeholder: "ks_… or service.knot", cls: "wide" }, { key: "description", label: "Описание", advanced: true }]));
-byId("catalogSearch").addEventListener("input", () => { if (lastStatus) renderCatalog(lastStatus); });
+byId("catalogSearch").addEventListener("input", () => { if (lastStatus)
+    renderCatalog(lastStatus); });
 byId("saveConfig").addEventListener("click", () => void saveConfig());
 byId("restartNode").addEventListener("click", async () => { await fetch("/api/reload", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); setSaveState("Перезапуск запрошен", "success"); });
 byId("stopNode").addEventListener("click", async () => { if (!confirm("Остановить узел KnotRoute? Его можно снова запустить из приложения в трее."))

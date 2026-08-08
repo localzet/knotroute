@@ -1,0 +1,13 @@
+<resources>
+    <style name="Theme.KnotRoute" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#8CFFC1</item>
+        <item name="colorOnPrimary">#08110D</item>
+        <item name="colorSecondary">#A6C8FF</item>
+        <item name="colorSurface">#11161D</item>
+        <item name="colorSurfaceContainer">#171D25</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#0D1117</item>
+        <item name="android:statusBarColor">#0D1117</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>

@@ -8,8 +8,7 @@ function T([string]$En, [string]$Ru) { if ($IsRu) { $Ru } else { $En } }
 $DataDir = Join-Path $env:LOCALAPPDATA "KnotRoute"
 # Stop the tray first so installed binaries are not locked. The daemon is asked
 # to shut down gracefully through its local management API below.
-Get-Process knotroute-desktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-try { Invoke-RestMethod -Method Post -ContentType "application/json" -Body "{}" -Uri "http://127.0.0.1:8484/api/shutdown" -TimeoutSec 2 | Out-Null; Start-Sleep -Milliseconds 500 } catch {}
+Get-Process KnotRoute -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 reg.exe delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v KnotRoute /f 2>$null | Out-Null
 $StateFile = Join-Path $DataDir "proxy-state.json"
 if (Test-Path $StateFile) {

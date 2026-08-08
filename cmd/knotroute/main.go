@@ -78,7 +78,7 @@ Usage:
   knotroute alias export --config knotroute.json --name localzet [--out localzet.knot-alias.json]
   knotroute alias import --config knotroute.json --file localzet.knot-alias.json
   knotroute doctor [--config knotroute.json] [--probe]
-  knotroute ca init|path|fingerprint|install|uninstall [--config knotroute.json]
+  knotroute ca init|path|fingerprint|info|install|uninstall|rotate [--config knotroute.json]
   knotroute network create
   knotroute invite export|import [--config knotroute.json]
   knotroute version
@@ -174,10 +174,12 @@ func inviteCommand(args []string) error {
 
 func caCommand(args []string) error {
 	if len(args) == 0 {
-		return errors.New("ca expects init, path, fingerprint, install, or uninstall")
+		return errors.New("ca expects init, path, fingerprint, info, install, uninstall, or rotate")
 	}
-	fs := flag.NewFlagSet("ca "+args[0], flag.ContinueOnError)
+	action := args[0]
+	fs := flag.NewFlagSet("ca "+action, flag.ContinueOnError)
 	path := fs.String("config", "knotroute.json", "configuration file")
+	yes := fs.Bool("yes", false, "confirm destructive CA rotation")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -188,11 +190,38 @@ func caCommand(args []string) error {
 	if !cfg.CA.Enabled {
 		return errors.New("local CA is disabled in the configuration")
 	}
-	authority, err := certauth.LoadOrCreate(cfg.CA.Directory)
+	profile := certauth.Profile{
+		ValidityDays: cfg.CA.ValidityDays,
+		Subject: certauth.Subject{
+			CommonName: cfg.CA.Subject.CommonName, Organization: append([]string(nil), cfg.CA.Subject.Organization...),
+			OrganizationalUnit: append([]string(nil), cfg.CA.Subject.OrganizationalUnit...), Country: append([]string(nil), cfg.CA.Subject.Country...),
+			Province: append([]string(nil), cfg.CA.Subject.Province...), Locality: append([]string(nil), cfg.CA.Subject.Locality...),
+			StreetAddress: append([]string(nil), cfg.CA.Subject.StreetAddress...), PostalCode: append([]string(nil), cfg.CA.Subject.PostalCode...),
+		},
+	}
+	if action == "rotate" {
+		if !*yes {
+			return errors.New("ca rotate replaces the root private key; pass --yes after updating ca.subject in the configuration")
+		}
+		if current, loadErr := certauth.LoadOrCreateWithProfile(cfg.CA.Directory, profile); loadErr == nil {
+			_ = certauth.UninstallUserRoot(current)
+		}
+		authority, rotateErr := certauth.Regenerate(cfg.CA.Directory, profile)
+		if rotateErr != nil {
+			return rotateErr
+		}
+		info := authority.Info()
+		fmt.Println("Rotated", info.RootPath)
+		fmt.Println("Subject:", info.Subject)
+		fmt.Println("SHA-256:", info.Fingerprint)
+		fmt.Println("Reinstall this root on every client that should trust .knot HTTPS.")
+		return nil
+	}
+	authority, err := certauth.LoadOrCreateWithProfile(cfg.CA.Directory, profile)
 	if err != nil {
 		return err
 	}
-	switch args[0] {
+	switch action {
 	case "init":
 		fmt.Println(authority.RootPath())
 		return nil
@@ -201,6 +230,16 @@ func caCommand(args []string) error {
 		return nil
 	case "fingerprint":
 		fmt.Println(authority.Fingerprint())
+		return nil
+	case "info":
+		info := authority.Info()
+		fmt.Println("Path:", info.RootPath)
+		fmt.Println("Subject:", info.Subject)
+		fmt.Println("Issuer:", info.Issuer)
+		fmt.Println("Serial:", info.Serial)
+		fmt.Println("SHA-256:", info.Fingerprint)
+		fmt.Println("Not before:", info.NotBefore.Format(time.RFC3339))
+		fmt.Println("Not after:", info.NotAfter.Format(time.RFC3339))
 		return nil
 	case "install":
 		if err := certauth.InstallUserRoot(authority); err != nil {
@@ -215,7 +254,7 @@ func caCommand(args []string) error {
 		fmt.Println("Removed", authority.Fingerprint())
 		return nil
 	default:
-		return fmt.Errorf("unknown ca command %q", args[0])
+		return fmt.Errorf("unknown ca command %q", action)
 	}
 }
 

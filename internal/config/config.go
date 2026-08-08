@@ -65,10 +65,46 @@ type Routing struct {
 	MaxHops     int    `json:"max_hops"`
 }
 
+type CertificateSubject struct {
+	CommonName         string   `json:"common_name"`
+	Organization       []string `json:"organization,omitempty"`
+	OrganizationalUnit []string `json:"organizational_unit,omitempty"`
+	Country            []string `json:"country,omitempty"`
+	Province           []string `json:"province,omitempty"`
+	Locality           []string `json:"locality,omitempty"`
+	StreetAddress      []string `json:"street_address,omitempty"`
+	PostalCode         []string `json:"postal_code,omitempty"`
+}
+
 type CertificateAuthority struct {
-	Enabled        bool   `json:"enabled"`
-	Directory      string `json:"directory"`
-	InterceptHTTPS bool   `json:"intercept_https"`
+	Enabled        bool               `json:"enabled"`
+	Directory      string             `json:"directory"`
+	InterceptHTTPS bool               `json:"intercept_https"`
+	ValidityDays   int                `json:"validity_days"`
+	Subject        CertificateSubject `json:"subject"`
+}
+
+type TransportEndpoint struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Endpoint string `json:"endpoint"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Priority int    `json:"priority,omitempty"`
+	Enabled  bool   `json:"enabled"`
+}
+
+type Transport struct {
+	Mode           string              `json:"mode"`
+	DirectFirst    bool                `json:"direct_first"`
+	FallbackDirect bool                `json:"fallback_direct"`
+	Endpoints      []TransportEndpoint `json:"endpoints,omitempty"`
+}
+
+func (t *Transport) Normalize() {
+	if strings.TrimSpace(t.Mode) == "" {
+		t.Mode = "auto"
+	}
 }
 
 type Proxy struct {
@@ -95,6 +131,7 @@ type Config struct {
 	Discovery    Discovery            `json:"discovery"`
 	Directory    Directory            `json:"directory"`
 	Privacy      Privacy              `json:"privacy"`
+	Transport    Transport            `json:"transport"`
 
 	Path string `json:"-"`
 }
@@ -105,7 +142,7 @@ func Default() Config {
 		IdentityFile: "identity.json",
 		Listen:       []string{"0.0.0.0:7447"},
 		Dashboard:    "127.0.0.1:8484",
-		CA:           CertificateAuthority{Enabled: true, Directory: "ca", InterceptHTTPS: true},
+		CA:           CertificateAuthority{Enabled: true, Directory: "ca", InterceptHTTPS: true, ValidityDays: 3650, Subject: CertificateSubject{CommonName: "KnotRoute Local Root CA", Organization: []string{"KnotRoute"}}},
 		Proxy: Proxy{
 			SOCKS: "127.0.0.1:9477", HTTP: "127.0.0.1:9478", Direct: true,
 			DefaultHTTP: "http", DefaultHTTPS: "https",
@@ -114,6 +151,7 @@ func Default() Config {
 		Discovery: Discovery{Enabled: true, LAN: true, PeerExchange: true, CacheFile: "peers.json", Interval: "30s"},
 		Directory: Directory{Replicas: 5, DescriptorTTL: "10m", PublishInterval: "2m", LookupTimeout: "8s"},
 		Privacy:   Privacy{CircuitHops: 3, CircuitTimeout: "15s"},
+		Transport: Transport{Mode: "auto", DirectFirst: true, FallbackDirect: true, Endpoints: []TransportEndpoint{}},
 		Services:  []Service{},
 		Forwards:  []Forward{},
 		Peers:     []Peer{},
@@ -122,6 +160,16 @@ func Default() Config {
 }
 
 func (c *Config) Normalize() {
+	c.Transport.Normalize()
+	if c.CA.ValidityDays == 0 {
+		c.CA.ValidityDays = 3650
+	}
+	if strings.TrimSpace(c.CA.Subject.CommonName) == "" {
+		c.CA.Subject.CommonName = "KnotRoute Local Root CA"
+	}
+	if len(c.CA.Subject.Organization) == 0 {
+		c.CA.Subject.Organization = []string{"KnotRoute"}
+	}
 	if strings.TrimSpace(c.Proxy.DefaultHTTP) == "" {
 		c.Proxy.DefaultHTTP = "http"
 	}
@@ -224,6 +272,29 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.IdentityFile) == "" {
 		errs = append(errs, errors.New("identity_file is required"))
 	}
+	switch c.Transport.Mode {
+	case "auto", "direct", "proxy":
+	default:
+		errs = append(errs, fmt.Errorf("transport.mode must be auto, direct, or proxy, got %q", c.Transport.Mode))
+	}
+	transportNames := map[string]bool{}
+	for i, endpoint := range c.Transport.Endpoints {
+		if strings.TrimSpace(endpoint.Name) == "" {
+			errs = append(errs, fmt.Errorf("transport.endpoints[%d].name is required", i))
+		}
+		if transportNames[endpoint.Name] {
+			errs = append(errs, fmt.Errorf("transport endpoint name %q is duplicated", endpoint.Name))
+		}
+		transportNames[endpoint.Name] = true
+		if endpoint.Type != "socks5" {
+			errs = append(errs, fmt.Errorf("transport endpoint %q: unsupported type %q", endpoint.Name, endpoint.Type))
+		}
+		if endpoint.Endpoint == "" {
+			errs = append(errs, fmt.Errorf("transport endpoint %q: endpoint is required", endpoint.Name))
+		} else if err := validateAddress("transport endpoint "+endpoint.Name, endpoint.Endpoint); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if len(c.Listen) == 0 {
 		errs = append(errs, errors.New("at least one listen address is required"))
 	}
@@ -296,6 +367,14 @@ func (c Config) Validate() error {
 	}
 	if c.CA.Enabled && strings.TrimSpace(c.CA.Directory) == "" {
 		errs = append(errs, errors.New("ca.directory is required when CA is enabled"))
+	}
+	if c.CA.Enabled {
+		if strings.TrimSpace(c.CA.Subject.CommonName) == "" {
+			errs = append(errs, errors.New("ca.subject.common_name is required"))
+		}
+		if c.CA.ValidityDays < 30 || c.CA.ValidityDays > 7300 {
+			errs = append(errs, errors.New("ca.validity_days must be between 30 and 7300"))
+		}
 	}
 	if c.Proxy.SOCKS != "" {
 		if err := validateAddress("proxy.socks", c.Proxy.SOCKS); err != nil {

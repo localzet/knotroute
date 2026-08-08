@@ -1,24 +1,37 @@
 <resources>
     <string name="app_name">KnotRoute</string>
-    <string name="client_subtitle">OVERLAY CLIENT</string>
-    <string name="channel_name">KnotRoute network</string>
-    <string name="notification_running">Encrypted overlay is connected</string>
-    <string name="home">Home</string><string name="browser">Browser</string><string name="network">Network</string><string name="diagnostics">Diagnostics</string>
-    <string name="connected">Connected</string><string name="starting">Starting…</string><string name="failed">Failed</string><string name="offline">Offline</string>
-    <string name="open_site">Open .knot site</string><string name="install_ca">Install local CA</string><string name="network_settings">Network settings</string>
-    <string name="current_network">Current network</string><string name="node_address">Node address</string><string name="proxy">Local HTTP proxy</string>
-    <string name="go">Go</string><string name="address_hint">https://… .knot</string><string name="tls_error">TLS trust failed. Install the KnotRoute local CA.</string>
-    <string name="core_starting">KnotRoute is still starting</string><string name="ca_failed">CA installation failed</string>
-    <string name="profile">Profile</string><string name="profile_name">Profile name</string><string name="network_id">Network ID</string><string name="beacon_urls">Beacon URLs, one per line</string><string name="circuit_hops">Circuit hops</string>
-    <string name="save_restart">Save &amp; restart</string><string name="add_profile">Add profile</string><string name="delete_profile">Delete profile</string><string name="default_profile">Default</string><string name="imported_profile">Imported network</string>
-    <string name="profile_imported">Network profile imported</string><string name="invalid_profile">Invalid KnotRoute join profile</string><string name="copy">Copy</string><string name="copied">Copied</string>
-    <string name="last_error">Last error</string><string name="webview_proxy_unsupported">This WebView does not support process proxy override</string>
-    <string name="no_error">No errors</string><string name="about_network">The network profile contains connection metadata only. Private keys never come from a QR code.</string>
-    <string name="notification_starting">Starting KnotRoute…</string>
-    <string name="notification_failed">KnotRoute failed to start: %1$s</string>
-    <string name="advanced_settings">Advanced settings</string>
-    <string name="invalid_network_id">Invalid Network ID. Expected a kn_… identifier.</string>
-    <string name="invalid_beacon_url">Invalid Beacon URL. Enter the Beacon HTTP(S) API URL.</string>
-    <string name="beacon_relay_port_error">Port 7447 is the relay transport, not the Beacon HTTP API. Use the Beacon HTTPS URL or HTTP port 8080.</string>
-    <string name="beacon_root_error">Use the Beacon root URL without /v1/peers or another path.</string>
+    <string name="tagline">communication that finds its own route</string>
+    <string name="home">Home</string><string name="chats">Chats</string><string name="catalog">Catalog</string><string name="network">Network</string><string name="more">More</string>
+    <string name="home_subtitle">Connectivity, identity and browser integration</string><string name="chats_subtitle">Direct signed messages over the KnotRoute overlay</string><string name="catalog_subtitle">Services observed by this node, not a global hidden-service registry</string><string name="network_subtitle">Your network profile and discovery settings</string><string name="more_subtitle">Profile, certificates and technical identity</string>
+    <string name="starting">Starting…</string><string name="connected">Connected</string><string name="failed">Failed</string><string name="connection">Connection</string><string name="connection_detail">%1$d peers · %2$d routes</string>
+    <string name="profile">Profile</string><string name="profile_name">Name</string><string name="bio">About you</string><string name="save_profile">Save profile</string><string name="saved">Saved</string>
+    <string name="browser_channel_name">Browser integration</string><string name="browser_integration">Browser integration</string><string name="browser_integration_running">Browsers are using the local KnotRoute HTTP proxy</string><string name="browser_open_knot">Open .knot in real browsers</string><string name="browser_beta_note">Beta: Android exposes the proxy through a browser-scoped VPN. Compatible Chromium browsers use KnotRoute for HTTP(S); apps may ignore the VPN proxy recommendation.</string><string name="enable">Enable</string><string name="browser_integration_started">Browser integration enabled</string>
+    <string name="browser_requires_android10">Browser integration requires Android 10 or newer.</string>
+    <string name="ca_title">Local Root CA</string><string name="ca_local_root">HTTPS for .knot</string><string name="ca_android_hint">Android 11+ requires CA certificates to be installed manually from Settings. KnotRoute exports the certificate file and opens the right settings area.</string><string name="export_ca">Export certificate</string><string name="ca_failed">Certificate operation failed</string><string name="ca_saved_title">Certificate saved</string><string name="ca_install_steps">Now open Settings → Security / More security settings → Encryption &amp; credentials → Install a certificate → CA certificate and select knotroute-root-ca.crt. Xiaomi/HyperOS wording can differ slightly. Android requires this Settings flow for CA roots.</string><string name="open_settings">Open settings</string><string name="open_security_settings">Open security settings</string><string name="ca_manage">Export or reinstall the local CA</string>
+    <string name="no_contacts">No contacts yet</string><string name="add_first_contact">Add the first contact</string><string name="contact_explain">Enter a friend’s kr_ node ID or node .knot address. The signed ku_ user identity is fetched over the overlay.</string><string name="contact_node">Contact node: kr_… or node.knot</string><string name="contact_name">Local contact name (optional)</string><string name="add_contact">Add contact</string><string name="message">Message</string><string name="send">Send</string>
+    <string name="published_service">Published service</string><string name="node_service">Service advertised by an observed node</string><string name="open_browser">Open in browser</string><string name="catalog_empty">Catalog is empty</string><string name="nothing_found">No observed services yet</string><string name="catalog_privacy">KnotRoute does not brute-force service identities. Only advertised or previously discovered services appear here.</string>
+    <string name="network_id">Network ID</string><string name="beacon_urls">Beacon API URLs, one per line</string><string name="circuit_hops">Circuit hops</string><string name="advanced_settings">Advanced settings</string><string name="save_restart">Save and restart</string><string name="default_profile">Network</string><string name="imported_profile">Imported network</string><string name="invalid_network_id">Network ID must start with kn_</string><string name="invalid_beacon_url">Invalid Beacon URL</string><string name="beacon_relay_port_error">Port 7447 is the relay transport, not the Beacon HTTP API. Use https://beacon.example.com or an HTTP API port.</string><string name="beacon_root_error">Beacon URL must point to the API root, without an extra path</string>
+    <string name="user_id">User ID</string><string name="user_id_explain">ku_ identifies your messenger/social profile and is separate from the device node.</string><string name="node_address">Node address</string><string name="node_id_explain">Technical kr_/.knot address of this device. It is not your social identity.</string><string name="core_starting">KnotRoute core is still starting</string>
+    <string name="channel_name">KnotRoute network</string><string name="notification_starting">Starting encrypted overlay…</string><string name="notification_running">KnotRoute is connected</string><string name="notification_failed">KnotRoute failed: %1$s</string>
+    <string name="configure_ca">Configure CA</string>
+    <string name="ca_profile_title">Root CA profile</string>
+    <string name="ca_profile_explain">For a self-signed Root CA, Issuer equals Subject. Saving changes the profile only; rotation creates a new root key/certificate and requires exporting and installing it again.</string>
+    <string name="ca_street">Street address</string>
+    <string name="ca_postal">Postal code</string>
+    <string name="ca_validity">Validity, days</string>
+    <string name="ca_invalid_validity">Validity must be a number between 30 and 7300 days.</string>
+    <string name="ca_profile_saved">CA profile saved. The current Root CA was not changed.</string>
+    <string name="rotate_ca">Rotate Root CA</string>
+    <string name="ca_rotated_export_again">Root CA rotated. Export and install the new certificate again.</string>
+    <string name="save">Save</string>
+    <string name="feed">Feed</string>
+    <string name="feed_empty">Your feed is empty</string>
+    <string name="feed_first_post">Publish the first post</string>
+    <string name="feed_alpha_note">Alpha: posts are signed and synchronized directly with online contacts.</string>
+    <string name="new_post">New post</string>
+    <string name="signed_post">Signed KnotRoute post</string>
+    <string name="refresh_feed">Refresh feed</string>
+    <string name="post_hint">What is new?</string>
+    <string name="publish">Publish</string>
+    <string name="feed_refreshed">Feed refreshed</string>
 </resources>

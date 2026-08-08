@@ -24,14 +24,16 @@ for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 d
   trap 'rm -rf "$TMP"' EXIT INT TERM
 
   echo "building $NAME"
-  CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/knotroute$EXT" ./cmd/knotroute
+  CLI_NAME="knotroute$EXT"
+  [ "$GOOS" = windows ] && CLI_NAME="knotroute-cli.exe"
+  CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/$CLI_NAME" ./cmd/knotroute
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/knotroute-beacon$EXT" ./cmd/knotroute-beacon
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/knotroute-sidecar$EXT" ./cmd/knotroute-sidecar
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$OPS_LDFLAGS" -o "$TMP/knotroute-control$EXT" ./cmd/knotroute-control
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$OPS_LDFLAGS" -o "$TMP/knotroute-agent$EXT" ./cmd/knotroute-agent
 
   if [ "$GOOS" = windows ]; then
-    CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" -o "$TMP/knotroute-desktop.exe" ./cmd/knotroute-desktop
+    CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" -o "$TMP/KnotRoute.exe" ./cmd/knotroute-desktop
     CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" -o "$TMP/knotroute-service.exe" ./cmd/knotroute-service
     cp packaging/windows/Install-KnotRoute.ps1 packaging/windows/Uninstall-KnotRoute.ps1 "$TMP/"
     mkdir -p "$TMP/service"

@@ -1,24 +1,37 @@
 <resources>
     <string name="app_name">KnotRoute</string>
-    <string name="client_subtitle">КЛИЕНТ СЕТИ</string>
-    <string name="channel_name">Сеть KnotRoute</string>
-    <string name="notification_running">Зашифрованная overlay-сеть подключена</string>
-    <string name="home">Главная</string><string name="browser">Браузер</string><string name="network">Сеть</string><string name="diagnostics">Диагностика</string>
-    <string name="connected">Подключено</string><string name="starting">Запуск…</string><string name="failed">Ошибка</string><string name="offline">Не подключено</string>
-    <string name="open_site">Открыть .knot сайт</string><string name="install_ca">Установить локальный CA</string><string name="network_settings">Настройки сети</string>
-    <string name="current_network">Текущая сеть</string><string name="node_address">Адрес узла</string><string name="proxy">Локальный HTTP proxy</string>
-    <string name="go">Открыть</string><string name="address_hint">https://… .knot</string><string name="tls_error">Ошибка доверия TLS. Установите локальный KnotRoute CA.</string>
-    <string name="core_starting">KnotRoute ещё запускается</string><string name="ca_failed">Не удалось установить CA</string>
-    <string name="profile">Профиль</string><string name="profile_name">Название профиля</string><string name="network_id">Network ID</string><string name="beacon_urls">Beacon URL, по одному на строку</string><string name="circuit_hops">Число hops в circuit</string>
-    <string name="save_restart">Сохранить и перезапустить</string><string name="add_profile">Добавить профиль</string><string name="delete_profile">Удалить профиль</string><string name="default_profile">Основная</string><string name="imported_profile">Импортированная сеть</string>
-    <string name="profile_imported">Профиль сети импортирован</string><string name="invalid_profile">Некорректный профиль подключения KnotRoute</string><string name="copy">Копировать</string><string name="copied">Скопировано</string>
-    <string name="last_error">Последняя ошибка</string><string name="webview_proxy_unsupported">Этот WebView не поддерживает локальное переопределение proxy</string>
-    <string name="no_error">Ошибок нет</string><string name="about_network">Профиль сети содержит только параметры подключения. Приватные ключи никогда не передаются через QR.</string>
-    <string name="notification_starting">Запуск KnotRoute…</string>
-    <string name="notification_failed">KnotRoute не запущен: %1$s</string>
-    <string name="advanced_settings">Дополнительные настройки</string>
-    <string name="invalid_network_id">Некорректный Network ID. Ожидается адрес kn_…</string>
-    <string name="invalid_beacon_url">Некорректный Beacon URL. Укажите HTTP(S) URL Beacon API.</string>
-    <string name="beacon_relay_port_error">Порт 7447 — relay transport, а не Beacon HTTP API. Используйте HTTPS URL Beacon или HTTP-порт 8080.</string>
-    <string name="beacon_root_error">Укажите корневой URL Beacon без /v1/peers и других путей.</string>
+    <string name="tagline">связь, которая сама находит дорогу</string>
+    <string name="home">Главная</string><string name="chats">Чаты</string><string name="catalog">Каталог</string><string name="network">Сеть</string><string name="more">Ещё</string>
+    <string name="home_subtitle">Связь, identity и интеграция с браузерами</string><string name="chats_subtitle">Подписанные сообщения напрямую поверх KnotRoute</string><string name="catalog_subtitle">Сервисы, которые реально видел этот узел — не глобальный реестр hidden services</string><string name="network_subtitle">Профиль сети и настройки discovery</string><string name="more_subtitle">Профиль, сертификаты и техническая identity</string>
+    <string name="starting">Запуск…</string><string name="connected">Подключено</string><string name="failed">Ошибка</string><string name="connection">Соединение</string><string name="connection_detail">Пиров: %1$d · маршрутов: %2$d</string>
+    <string name="profile">Профиль</string><string name="profile_name">Имя</string><string name="bio">О себе</string><string name="save_profile">Сохранить профиль</string><string name="saved">Сохранено</string>
+    <string name="browser_channel_name">Интеграция с браузерами</string><string name="browser_integration">Интеграция с браузерами</string><string name="browser_integration_running">Браузеры используют локальный HTTP proxy KnotRoute</string><string name="browser_open_knot">Открывать .knot в обычном браузере</string><string name="browser_beta_note">Beta: Android передаёт proxy через VPN только браузерам. Совместимые Chromium-браузеры используют KnotRoute для HTTP(S); отдельные приложения могут игнорировать рекомендацию proxy.</string><string name="enable">Включить</string><string name="browser_integration_started">Интеграция с браузерами включена</string>
+    <string name="browser_requires_android10">Интеграция с браузерами требует Android 10 или новее.</string>
+    <string name="ca_title">Локальный Root CA</string><string name="ca_local_root">HTTPS для .knot</string><string name="ca_android_hint">Android 11+ разрешает устанавливать корневые CA только через Настройки. KnotRoute сохраняет файл сертификата и открывает нужный раздел.</string><string name="export_ca">Сохранить сертификат</string><string name="ca_failed">Ошибка сертификата</string><string name="ca_saved_title">Сертификат сохранён</string><string name="ca_install_steps">Теперь откройте Настройки → Безопасность / Другие настройки безопасности → Шифрование и учётные данные → Установить сертификат → Сертификат ЦС и выберите knotroute-root-ca.crt. На Xiaomi/HyperOS названия пунктов могут немного отличаться. Для CA Android требует именно установку через Настройки.</string><string name="open_settings">Открыть настройки</string><string name="open_security_settings">Открыть настройки безопасности</string><string name="ca_manage">Сохранить или переустановить локальный CA</string>
+    <string name="no_contacts">Контактов пока нет</string><string name="add_first_contact">Добавьте первый контакт</string><string name="contact_explain">Введите kr_ Node ID друга или node .knot. Подписанная ku_ identity пользователя будет получена через overlay.</string><string name="contact_node">Узел контакта: kr_… или node.knot</string><string name="contact_name">Имя контакта у вас (необязательно)</string><string name="add_contact">Добавить контакт</string><string name="message">Сообщение</string><string name="send">Отправить</string>
+    <string name="published_service">Опубликованный сервис</string><string name="node_service">Сервис, объявленный найденным узлом</string><string name="open_browser">Открыть в браузере</string><string name="catalog_empty">Каталог пуст</string><string name="nothing_found">Сервисы пока не обнаружены</string><string name="catalog_privacy">KnotRoute не перебирает service identity. Здесь появляются только объявленные или уже обнаруженные сервисы.</string>
+    <string name="network_id">Network ID</string><string name="beacon_urls">Beacon API URLs, по одному на строку</string><string name="circuit_hops">Число hops в circuit</string><string name="advanced_settings">Дополнительные настройки</string><string name="save_restart">Сохранить и перезапустить</string><string name="default_profile">Сеть</string><string name="imported_profile">Импортированная сеть</string><string name="invalid_network_id">Network ID должен начинаться с kn_</string><string name="invalid_beacon_url">Некорректный Beacon URL</string><string name="beacon_relay_port_error">7447 — порт relay transport, а не HTTP API Beacon. Используйте https://beacon.example.com или HTTP API-порт.</string><string name="beacon_root_error">Beacon URL должен указывать на корень API без дополнительного пути</string>
+    <string name="user_id">User ID</string><string name="user_id_explain">ku_ идентифицирует ваш профиль мессенджера/социального слоя и не привязан к конкретному устройству.</string><string name="node_address">Адрес узла</string><string name="node_id_explain">Технический kr_/.knot адрес этого устройства. Это не ваша социальная identity.</string><string name="core_starting">Ядро KnotRoute ещё запускается</string>
+    <string name="channel_name">Сеть KnotRoute</string><string name="notification_starting">Запуск защищённой overlay-сети…</string><string name="notification_running">KnotRoute подключён</string><string name="notification_failed">Ошибка KnotRoute: %1$s</string>
+    <string name="configure_ca">Настроить CA</string>
+    <string name="ca_profile_title">Профиль Root CA</string>
+    <string name="ca_profile_explain">У self-signed Root CA Issuer равен Subject. Сохранение меняет только профиль; ротация создаёт новый ключ и сертификат, после чего его нужно снова экспортировать и установить.</string>
+    <string name="ca_street">Адрес</string>
+    <string name="ca_postal">Почтовый индекс</string>
+    <string name="ca_validity">Срок действия, дней</string>
+    <string name="ca_invalid_validity">Срок действия должен быть числом от 30 до 7300 дней.</string>
+    <string name="ca_profile_saved">Профиль CA сохранён. Текущий Root CA не изменён.</string>
+    <string name="rotate_ca">Перевыпустить Root CA</string>
+    <string name="ca_rotated_export_again">Root CA перевыпущен. Экспортируйте и установите новый сертификат заново.</string>
+    <string name="save">Сохранить</string>
+    <string name="feed">Лента</string>
+    <string name="feed_empty">Лента пока пустая</string>
+    <string name="feed_first_post">Опубликуйте первый пост</string>
+    <string name="feed_alpha_note">Alpha: посты подписываются и синхронизируются напрямую с online-контактами.</string>
+    <string name="new_post">Новый пост</string>
+    <string name="signed_post">Подписанный пост KnotRoute</string>
+    <string name="refresh_feed">Обновить ленту</string>
+    <string name="post_hint">Что нового?</string>
+    <string name="publish">Опубликовать</string>
+    <string name="feed_refreshed">Лента обновлена</string>
 </resources>

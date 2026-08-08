@@ -45,6 +45,8 @@ jobs:
         run: |
           go test ./internal/overlay -run '^(TestOverlayAutoPeersThroughBeacon|TestHTTPProxyResolvesKnotDomainAcrossRelay|TestSOCKS5ResolvesServiceKnotDomainAcrossRelay|TestHTTPProxyOpensLocalPublishedService|TestPublishedServiceThroughDirectoryIntroductionAndRendezvous)$' -count=3 -timeout=150s
           go test ./cmd/knotroute-control -run '^TestAgentLifecycleEnrollHeartbeatJobResult$' -count=10 -timeout=60s
+          go test ./internal/clientruntime -run '^TestMessengerAcrossTwoRuntimes$' -count=10 -timeout=120s
+          go test ./internal/transport -run '^TestSOCKS5Transport$' -count=20 -timeout=60s
 
   docs:
     runs-on: ubuntu-latest

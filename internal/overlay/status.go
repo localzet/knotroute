@@ -1,6 +1,10 @@
 package overlay
 
-import "time"
+import (
+	"time"
+
+	transportpkg "github.com/localzet/knotroute/internal/transport"
+)
 
 type PeerStatus struct {
 	ID         string   `json:"id"`
@@ -69,6 +73,7 @@ type Status struct {
 	Forwards       []ForwardStatus      `json:"forwards"`
 	Aliases        []AliasStatus        `json:"aliases"`
 	Proxy          ProxyStatus          `json:"proxy"`
+	Transport      transportpkg.Status  `json:"transport"`
 	ActiveStreams  int                  `json:"active_streams"`
 	ActiveCircuits int                  `json:"active_circuits"`
 	Descriptors    int                  `json:"descriptors"`

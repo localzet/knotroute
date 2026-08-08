@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"sort"
 	"time"
 
@@ -110,8 +109,9 @@ func (n *Node) dialCandidate(id nodeid.ID) {
 		if n.ctx.Err() != nil {
 			return
 		}
-		dialer := net.Dialer{Timeout: 5 * time.Second, KeepAlive: 20 * time.Second}
-		raw, err := dialer.DialContext(n.ctx, "tcp", address)
+		dialCtx, cancel := context.WithTimeout(n.ctx, 5*time.Second)
+		raw, err := n.transport.DialContext(dialCtx, address)
+		cancel()
 		if err != nil {
 			continue
 		}

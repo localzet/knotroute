@@ -32,7 +32,7 @@ jobs:
         run: |
           export PATH="$(go env GOPATH)/bin:$PATH"
           mkdir -p android/app/libs
-          gomobile bind -target=android -androidapi 26 -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
+          gomobile bind -target=android -androidapi 26 -ldflags="-X github.com/localzet/knotroute/internal/overlay.Version=${GITHUB_REF_NAME#v}" -o android/app/libs/knotroute-client.aar ./mobile/knotmobile
           test -s android/app/libs/knotroute-client.aar
       - working-directory: android
         run: gradle --no-daemon -PknotVersion="${GITHUB_REF_NAME#v}" :app:assembleDebug :app:assembleRelease

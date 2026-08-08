@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.0.0-alpha.1
+
+- Replaced the Windows daemon-plus-dashboard client model with a native one-process `KnotRoute.exe`.
+- Added `ku_` user identities, signed profiles/messages/posts, online messenger transport and feed synchronization over `kr-chat`.
+- Added a service catalog to desktop and Android clients.
+- Added a pluggable transport manager with direct and SOCKS5/Xray peer dialing.
+- Rebuilt the Android application around Material UI and removed the embedded WebView browser.
+- Added Android browser integration beta through a browser-scoped VPN HTTP proxy on Android 10+.
+- Replaced Android CA installation intent with certificate export plus system Settings flow.
+- Added configurable X.509 Root CA subject/validity, inspection and explicit rotation.
+- Added developer-focused desktop documentation for identities, services, aliases and Docker sidecars.
+
 ## Unreleased — stabilization
 
 - Restored HTTP/SOCKS `.knot` proxy routing through the circuit API and added a local-service fast path for TCP and embedded `pipe://` services.

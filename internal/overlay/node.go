@@ -29,6 +29,7 @@ import (
 	proxyserver "github.com/localzet/knotroute/internal/proxy"
 	"github.com/localzet/knotroute/internal/router"
 	"github.com/localzet/knotroute/internal/serviceid"
+	"github.com/localzet/knotroute/internal/transport"
 )
 
 var Version = "dev"
@@ -94,6 +95,7 @@ type Node struct {
 	rendezvous  rendezvousState
 	circuits    circuitState
 	ca          *certauth.Authority
+	transport   *transport.Manager
 }
 
 func New(cfg config.Config, id *identity.Identity) (*Node, error) {
@@ -114,13 +116,22 @@ func New(cfg config.Config, id *identity.Identity) (*Node, error) {
 		InsecureSkipVerify: true, // self-authenticating key; verified after handshake
 	}
 	n := &Node{
-		cfg: cfg, id: id, network: network, serverTLS: serverTLS, clientTLS: clientTLS,
+		cfg: cfg, id: id, network: network, serverTLS: serverTLS, clientTLS: clientTLS, transport: transport.New(cfg.Transport),
 		peers: map[nodeid.ID]*peer{}, lsas: map[nodeid.ID]protocol.LSA{}, routes: map[nodeid.ID]router.Route{},
 		seenPackets: map[[16]byte]time.Time{}, streams: map[[16]byte]*stream{}, pending: map[[16]byte]chan openResult{},
 		restartRequested: make(chan struct{}), shutdownRequested: make(chan struct{}), discovered: map[nodeid.ID]discovery.Candidate{}, dialing: map[nodeid.ID]bool{},
 	}
 	if cfg.CA.Enabled && cfg.CA.Directory != "" && cfg.Path != "" {
-		authority, caErr := certauth.LoadOrCreate(cfg.CA.Directory)
+		profile := certauth.Profile{
+			ValidityDays: cfg.CA.ValidityDays,
+			Subject: certauth.Subject{
+				CommonName: cfg.CA.Subject.CommonName, Organization: append([]string(nil), cfg.CA.Subject.Organization...),
+				OrganizationalUnit: append([]string(nil), cfg.CA.Subject.OrganizationalUnit...), Country: append([]string(nil), cfg.CA.Subject.Country...),
+				Province: append([]string(nil), cfg.CA.Subject.Province...), Locality: append([]string(nil), cfg.CA.Subject.Locality...),
+				StreetAddress: append([]string(nil), cfg.CA.Subject.StreetAddress...), PostalCode: append([]string(nil), cfg.CA.Subject.PostalCode...),
+			},
+		}
+		authority, caErr := certauth.LoadOrCreateWithProfile(cfg.CA.Directory, profile)
 		if caErr != nil {
 			return nil, fmt.Errorf("initialize local CA: %w", caErr)
 		}
@@ -348,8 +359,7 @@ func (n *Node) dialLoop(cfgPeer config.Peer) {
 	}
 	backoff := time.Second
 	for n.ctx.Err() == nil {
-		dialer := net.Dialer{Timeout: 8 * time.Second, KeepAlive: 20 * time.Second}
-		raw, err := dialer.DialContext(n.ctx, "tcp", cfgPeer.Address)
+		raw, err := n.transport.DialContext(n.ctx, cfgPeer.Address)
 		if err == nil {
 			p, establishErr := n.establishPeer(raw, true, expected)
 			if establishErr == nil {
@@ -645,6 +655,9 @@ func (n *Node) addEvent(level, message string) {
 func (n *Node) Status() Status {
 	status := Status{Name: "KnotRoute", Version: Version, NetworkID: n.network.String(), NodeID: n.id.ID.String(), Domain: n.Domain(), ShortID: n.id.ID.Short(), StartedAt: n.startedAt, Listen: append([]string{}, n.Addresses()...), Peers: []PeerStatus{}, Routes: []RouteStatus{}, Services: []ServiceStatus{}, KnownServices: []KnownServiceStatus{}, Forwards: []ForwardStatus{}, Aliases: []AliasStatus{}, Events: []Event{}, BytesSent: n.stats.bytesSent.Load(), BytesReceived: n.stats.bytesReceived.Load(), FramesSent: n.stats.framesSent.Load(), FramesReceived: n.stats.framesReceived.Load()}
 	status.Proxy = ProxyStatus{SOCKS: n.cfg.Proxy.SOCKS, HTTP: n.cfg.Proxy.HTTP, Direct: n.cfg.Proxy.Direct, Listeners: append([]string{}, n.proxyAddresses...)}
+	if n.transport != nil {
+		status.Transport = n.transport.Status()
+	}
 	for _, address := range n.proxyAddresses {
 		if strings.HasPrefix(address, "socks5://") {
 			status.Proxy.SOCKS = strings.TrimPrefix(address, "socks5://")

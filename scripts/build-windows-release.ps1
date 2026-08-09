@@ -28,6 +28,7 @@ try {
 
   Push-Location (Join-Path $Root "cmd/knotroute-desktop")
   try {
+    go mod tidy
     wails build -clean -platform "windows/$Arch" -webview2 embed -trimpath -ldflags $Ld -o KnotRoute.exe
     Copy-Item "build/bin/KnotRoute.exe" (Join-Path $Tmp "KnotRoute.exe") -Force
   } finally { Pop-Location }

@@ -29,7 +29,6 @@ try {
       go build -trimpath -ldflags=$opsLdflags -o (Join-Path $temp "knotroute-agent$ext") ./cmd/knotroute-agent
 
       if ($goos -eq "windows") {
-        go build -trimpath -ldflags="$ldflags -H=windowsgui" -o (Join-Path $temp "knotroute-desktop.exe") ./cmd/knotroute-desktop
         go build -trimpath -ldflags="$ldflags -H=windowsgui" -o (Join-Path $temp "knotroute-service.exe") ./cmd/knotroute-service
         Copy-Item packaging/windows/Install-KnotRoute.ps1, packaging/windows/Uninstall-KnotRoute.ps1 $temp
         New-Item -ItemType Directory -Force (Join-Path $temp "service") | Out-Null
@@ -57,7 +56,7 @@ try {
   $sourceRoot = Join-Path $sourceTemp "knotroute-$Version"
   New-Item -ItemType Directory -Force $sourceRoot | Out-Null
   try {
-    tar -C $Root --exclude=.git --exclude=dist --exclude=bin --exclude=android/.gradle --exclude=android/app/build --exclude=android/app/libs/*.aar --exclude=web/node_modules --exclude=internal/overlay/peers.json --exclude=*.log --exclude=*.tmp -cf - . | tar -C $sourceRoot -xf -
+    tar -C $Root --exclude=.git --exclude=dist --exclude=bin --exclude=android/.gradle --exclude=android/app/build --exclude=android/app/libs/*.aar --exclude=web/node_modules --exclude=cmd/knotroute-desktop/frontend/node_modules --exclude=cmd/knotroute-desktop/build --exclude=internal/overlay/peers.json --exclude=*.log --exclude=*.tmp -cf - . | tar -C $sourceRoot -xf -
     Compress-Archive -Path $sourceRoot -DestinationPath $sourcePath -Force
   } finally {
     Remove-Item -Recurse -Force $sourceTemp -ErrorAction SilentlyContinue

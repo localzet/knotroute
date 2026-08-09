@@ -47,6 +47,14 @@ jobs:
       - name: Verify committed desktop assets
         shell: bash
         run: git diff --exit-code cmd/knotroute-desktop/frontend/dist
+      - name: Resolve desktop Go module
+        working-directory: cmd/knotroute-desktop
+        run: go mod tidy
+      - name: Test desktop Go bridge
+        working-directory: cmd/knotroute-desktop
+        run: |
+          go test ./...
+          go vet ./...
       - name: Install Wails v2
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
       - name: Build native desktop client

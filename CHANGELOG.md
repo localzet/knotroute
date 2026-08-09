@@ -1,3 +1,9 @@
+## v4.0.0-alpha.3 CI hotfix
+
+- Fixed desktop frontend builds on Windows/Node 24 by invoking the TypeScript JS entrypoint through Node instead of spawning `tsc.cmd`.
+- Isolated Wails into the desktop submodule so root `go test ./...` no longer depends on desktop-only Wails checksums.
+- Added dedicated desktop `go mod tidy`, tests and vet to Windows CI/release jobs.
+
 # Changelog
 
 ## 4.0.0-alpha.3-desktop

@@ -56,6 +56,8 @@ tar -C "$ROOT" \
   --exclude='./android/app/build' \
   --exclude='./android/app/libs/*.aar' \
   --exclude='./web/node_modules' \
+  --exclude='./cmd/knotroute-desktop/frontend/node_modules' \
+  --exclude='./cmd/knotroute-desktop/build' \
   --exclude='./internal/overlay/peers.json' \
   --exclude='*.log' \
   --exclude='*.tmp' \

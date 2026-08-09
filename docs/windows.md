@@ -8,66 +8,42 @@ Extract the Windows release archive and run:
 powershell -ExecutionPolicy Bypass -File .\Install-KnotRoute.ps1
 ```
 
-The per-user installer copies the desktop binaries under:
+The installer places the interactive client under:
 
 ```text
-%LOCALAPPDATA%\Programs\KnotRoute
+%LOCALAPPDATA%\Programs\KnotRoute\KnotRoute.exe
 ```
 
-Persistent identity, configuration, service identities, CA material, logs, peer cache, and integration-state backup are kept separately under:
+Persistent identities, configuration, CA material, social state, peer cache and integration backup remain under:
 
 ```text
 %LOCALAPPDATA%\KnotRoute
 ```
 
-This separation allows application upgrades without replacing cryptographic identities.
+Application upgrades therefore do not replace cryptographic identities.
 
-## Which executable to run
+## Interactive client
 
-For normal interactive desktop use run:
+For normal use launch only:
 
 ```text
-knotroute-desktop.exe
+KnotRoute.exe
 ```
 
-The archive also contains:
+The v4 desktop client is a single process. The KnotRoute Go runtime, messenger/social state and transport manager run in-process; Wails hosts the system WebView2 renderer for the user interface. There is no second daemon required for interactive use and the old loopback dashboard is not the desktop UI.
+
+Main user sections are Home, Chats, Feed, Catalog, Internet, Network and Settings. Node IDs, service identities, aliases, routes, listening addresses, transport attempts and event diagnostics live under **Developers**.
+
+Additional release tools:
 
 ```text
-knotroute.exe           CLI and overlay daemon
-knotroute-service.exe   Windows Service Control Manager wrapper
+knotroute-cli.exe       CLI and diagnostics
+knotroute-service.exe   optional Windows Service wrapper
 knotroute-beacon.exe    Beacon/bootstrap server
 knotroute-sidecar.exe   sidecar/server launcher
 ```
 
-The tray controller initializes and starts `knotroute.exe` automatically when necessary.
-
-## Tray controller
-
-Double-click the tray icon to open the dashboard. Right-click it for:
-
-- Open dashboard;
-- Start node;
-- Stop node;
-- Restart node;
-- Copy node `.knot` address;
-- Enable/disable `.knot` system integration;
-- Enable/disable launch at sign-in;
-- Open the data directory;
-- Exit the tray while leaving the daemon running.
-
-The dashboard exposes v3 configuration for:
-
-- `network_id`;
-- seed peers and advertised addresses;
-- Beacon/LAN/PEX discovery;
-- published service identities and introduction-point count;
-- direct forwards and aliases;
-- circuit hop policy;
-- directory replication/TTL;
-- local SOCKS/HTTP gateways;
-- local CA behavior.
-
-Configuration updates are validated and atomically written before a daemon restart is requested.
+The UI runtime is started asynchronously so discovery or a slow transport cannot block the Windows message loop. Only changed snapshots are emitted to the frontend, and incoming state updates are deferred while the user is editing a form.
 
 ## `.knot` system integration
 

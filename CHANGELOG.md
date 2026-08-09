@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.0.0-alpha.3-desktop
+
+- Replaced the failed hand-written Win32/GDI presentation layer with an embedded Wails v2/WebView2 desktop UI while keeping the KnotRoute Go runtime in-process in one `KnotRoute.exe`.
+- Removed HWND recreation/polling from the UI thread; backend state is emitted from a background snapshot loop and frontend refresh is deferred while editing form fields.
+- Added consumer-oriented Home, Chats, Feed, Catalog, Internet, Network and Settings pages, with low-level node/service/route/event details isolated under Developers.
+- Added single-instance focus handling and explicit browser-integration confirmation.
+- Made PAC state changes transactional and cached expensive registry/CA status reads out of the periodic snapshot path.
+- Added deterministic desktop frontend build/checks and dedicated Windows Wails amd64/arm64 CI/release jobs with the WebView2 bootstrapper embedded.
+
+## 4.0.0-alpha.2-ui
+
+- Replaced the prototype Windows control layout with a custom-drawn native application shell.
+- Added a real sidebar surface, selected navigation states, rounded cards, dark action buttons and owner-drawn lists instead of default Win32 chrome.
+- Added transparent text rendering over cards and distinct primary, secondary and destructive actions.
+- Increased the desktop canvas and tightened typography/spacing while keeping the one-process in-process runtime model.
+- Preserved all v4 pages (home, chats, feed, catalog, network, developer tools and settings) without returning to the local web dashboard.
+
 ## 4.0.0-alpha.1
 
 - Replaced the Windows daemon-plus-dashboard client model with a native one-process `KnotRoute.exe`.

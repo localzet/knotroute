@@ -14,7 +14,7 @@ cd "$ROOT"
 LDFLAGS="-s -w -X github.com/localzet/knotroute/internal/overlay.Version=$VERSION"
 OPS_LDFLAGS="-s -w -X github.com/localzet/knotroute/internal/ops.Version=$VERSION"
 
-for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 darwin/arm64; do
+for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
   GOOS=${target%/*}
   GOARCH=${target#*/}
   EXT=""
@@ -31,15 +31,6 @@ for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 d
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS" -o "$TMP/knotroute-sidecar$EXT" ./cmd/knotroute-sidecar
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$OPS_LDFLAGS" -o "$TMP/knotroute-control$EXT" ./cmd/knotroute-control
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$OPS_LDFLAGS" -o "$TMP/knotroute-agent$EXT" ./cmd/knotroute-agent
-
-  if [ "$GOOS" = windows ]; then
-    CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" -o "$TMP/KnotRoute.exe" ./cmd/knotroute-desktop
-    CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" -o "$TMP/knotroute-service.exe" ./cmd/knotroute-service
-    cp packaging/windows/Install-KnotRoute.ps1 packaging/windows/Uninstall-KnotRoute.ps1 "$TMP/"
-    mkdir -p "$TMP/service"
-    cp packaging/windows/install-service.ps1 packaging/windows/uninstall-service.ps1 "$TMP/service/"
-    cp docs/windows.md "$TMP/README-WINDOWS.md"
-  fi
 
   cp README.md LICENSE "$TMP/"
   rm -f "$OUT_DIR/$NAME.zip" "$OUT_DIR/$NAME.tar.gz"

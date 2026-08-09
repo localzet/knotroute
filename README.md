@@ -239,49 +239,33 @@ This is a local browser-compatibility mechanism, not a network-wide certificate 
 
 ## Windows desktop client
 
-Build/download the Windows archive and run:
+KnotRoute v4 ships the interactive Windows client as a single:
+
+```text
+KnotRoute.exe
+```
+
+The executable contains the Go client runtime and an embedded desktop UI rendered by the system WebView2 runtime through Wails. It is not a browser tab and it does not depend on the loopback dashboard for presentation. Network startup runs outside the UI thread, and state changes are delivered to the frontend through application events.
+
+Install from the Windows release archive with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install-KnotRoute.ps1
 ```
 
-Then launch:
+The ordinary UI separates consumer features (Chats, Feed, Catalog, Internet) from low-level service/node tooling under **Developers**. `.knot` browser integration installs the per-user KnotRoute Root CA and configures the current user's PAC only after explicit confirmation. Existing PAC state is backed up and restored when integration is disabled.
 
-```text
-knotroute-desktop.exe
-```
-
-The tray menu provides:
-
-- Start / stop / restart node;
-- Open dashboard;
-- Copy node `.knot` address;
-- Enable / disable `.knot` system integration;
-- Start with Windows;
-- Open the KnotRoute data directory.
-
-Enabling system integration explicitly asks before:
-
-1. installing the **per-user** KnotRoute Root CA into the Windows Trusted Root store;
-2. setting the current user's PAC URL.
-
-The previous PAC setting is backed up and restored when integration is disabled. The Root CA is removed at the same time.
-
-The ordinary desktop setup does not require a TUN adapter. An optional `knotroute-service.exe` wrapper is included for unattended Windows Service deployments.
+The release also includes `knotroute-cli.exe` for diagnostics/automation and an optional `knotroute-service.exe` wrapper for unattended Windows Service deployments.
 
 See [`docs/windows.md`](docs/windows.md).
 
 ## Android client
 
-The Android project is under [`android/`](android/). It embeds the Go core generated from [`mobile/knotmobile`](mobile/knotmobile) with `gomobile bind`.
+The Android project is under [`android/`](android/) and embeds the same Go core from [`mobile/knotmobile`](mobile/knotmobile) with `gomobile bind`.
 
-The app:
+The v4 application is a communication/network client rather than an embedded browser: it exposes chats, feed, catalog and network state in Material UI, while `.knot` links are handed to the user's real browser. A foreground `VpnService` can advertise the local KnotRoute HTTP proxy on Android 10+ as a browser-integration compatibility layer. Android documents that applications may ignore a VPN-provided HTTP proxy, so packet-level tun2socks integration remains the intended final v4 path.
 
-- runs the overlay in a foreground service;
-- uses AndroidX WebKit `ProxyController` so its WebView sends traffic through the process-local KnotRoute proxy;
-- can import the local KnotRoute Root CA through Android's normal certificate installation UI;
-- explicitly cancels WebView TLS errors rather than bypassing certificate validation;
-- requires no TUN/VPN service.
+Modern Android does not allow an ordinary application to silently install a user CA. KnotRoute exports `knotroute-root-ca.crt` and opens Security Settings; the user installs the certificate explicitly. Browser/app trust of user-installed CAs still depends on that application's Android network-security policy.
 
 Build:
 
@@ -289,79 +273,7 @@ Build:
 ./scripts/build-android.sh
 ```
 
-Requirements are documented in [`docs/android.md`](docs/android.md). GitHub Actions also builds the debug APK, unsigned release APK, and reusable AAR.
-
-## Embedding KnotRoute into applications
-
-### Go client
-
-```go
-client, err := knotclient.New(knotclient.Options{
-    DataDir:      "./knot-data",
-    Beacons:      []string{"https://beacon.example"},
-    CircuitHops:  3,
-    PeerExchange: true,
-})
-if err != nil {
-    log.Fatal(err)
-}
-if err := client.Start(ctx); err != nil {
-    log.Fatal(err)
-}
-defer client.Close()
-
-conn, err := client.Dial(ctx, "<service-address>.knot")
-```
-
-Import:
-
-```go
-import "github.com/localzet/knotroute/pkg/knotclient"
-```
-
-`knotclient` can also return an `http.Client` for plain HTTP `.knot` requests and can expose local HTTP/SOCKS gateways if the embedding application wants proxy semantics.
-
-### Go server
-
-`pkg/knotserver` lets a process publish an in-process handler as an independent hidden service without opening an application port externally.
-
-```go
-host, err := knotserver.New(knotserver.Options{
-    DataDir: "./knot-server",
-    Beacons: []string{"https://beacon.example"},
-    Services: []knotserver.Service{{
-        Name: "rpc",
-        Handler: knotserver.HandlerFunc(func(conn net.Conn) {
-            // Serve the application protocol on conn.
-        }),
-    }},
-})
-```
-
-### Android AAR
-
-The release workflow produces:
-
-```text
-knotroute-client_3.0.1_android.aar
-```
-
-An Android application can construct the embedded client, call `Start()`, and use `OpenForward()` to obtain a loopback TCP port connected to a `.knot` service. The standalone KnotRoute Android app is therefore optional for applications that embed the AAR.
-
-See [`docs/sdk.md`](docs/sdk.md).
-
-## Application primitives
-
-`pkg/knotapp` contains optional protocols built on top of a KnotRoute stream:
-
-- `RPC` — request/response JSON RPC primitive;
-- `DATAGRAM` — one framed message per short-lived stream;
-- `PUBSUB` — topic-secret encrypted messages through an untrusted broker;
-- `OBJECT` — SHA-256 content-addressed object put/get with integrity verification.
-
-`pkg/knotmailbox` provides an offline mailbox primitive where the relay stores encrypted envelopes, recipients authenticate fetch/ack operations, and plaintext remains end-to-end protected.
-
-These packages are independent building blocks; KnotRoute does not force applications into a specific application protocol.
+Requirements and device-specific notes are documented in [`docs/android.md`](docs/android.md). GitHub Actions builds the debug APK, unsigned release APK, and reusable AAR.
 
 ## Docker sidecar
 
@@ -547,7 +459,7 @@ CI runs Go tests on Linux, Windows, and macOS, and has a separate Android build 
 
 ```text
 cmd/knotroute             CLI/node
-cmd/knotroute-desktop     native Windows tray controller
+cmd/knotroute-desktop     Wails/WebView2 Windows client with in-process runtime
 cmd/knotroute-service     Windows SCM wrapper
 cmd/knotroute-beacon      peer-discovery/bootstrap service
 cmd/knotroute-sidecar     Docker publishing sidecar

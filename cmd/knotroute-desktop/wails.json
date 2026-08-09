@@ -1,0 +1,11 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "KnotRoute",
+  "outputfilename": "KnotRoute",
+  "frontend:dir": "frontend",
+  "frontend:install": "npm install --no-audit --no-fund",
+  "frontend:build": "npm run build",
+  "author": {
+    "name": "Localzet"
+  }
+}
